@@ -23,6 +23,19 @@
   --font-sans: var(--font-zen-kaku);
   --font-mono: var(--font-jetbrains-mono);
   --shadow-card: 0 18px 44px rgba(26, 24, 19, 0.1);
+  --animate-popup-in: popup-in 0.18s ease-out;
+
+  /* プロフィールのポップアップ: 右上を起点に、ふわっと拡大しながら出す。 */
+  @keyframes popup-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
 }
 
 body {

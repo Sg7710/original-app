@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import type { Store } from "@/types/store";
 import type { Person } from "@/types/social";
-import { walkText } from "@/lib/meshi/derived";
+import { TravelTime } from "./TravelTime";
 import { Avatar } from "./Avatar";
+import { PriceLabel } from "./PriceLabel";
+import { StoreThumb } from "./StoreThumb";
 
 interface FavListEveryoneViewProps {
   stores: Store[];
@@ -84,21 +86,16 @@ export function FavListEveryoneView({
               className="flex flex-col gap-3 rounded-[20px] border border-card-border bg-white p-3"
             >
               <div className="flex items-center gap-[14px]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={store.photoUrl}
-                  alt={store.name}
-                  className="h-16 w-16 shrink-0 rounded-[15px] object-cover"
-                />
-                <div className="flex min-w-0 flex-1 flex-col gap-[7px]">
+                <StoreThumb store={store} size={64} radius={15} />
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <p className="truncate text-[15px] font-bold text-text-primary">{store.name}</p>
-                  <p className="flex items-center gap-2 font-mono text-[11px] text-text-secondary">
-                    <span>{walkText(store.walkMinutes)}</span>
-                    <span className="text-[#D6D0C4]">/</span>
-                    <span>{store.price ?? "?"}</span>
-                    <span className="text-[#D6D0C4]">/</span>
-                    <span>{store.genre}</span>
+                  <p className="font-mono text-[11px] text-text-secondary">
+                    <TravelTime store={store} />
                   </p>
+                  <p className="font-mono text-[11px] text-text-secondary">
+                    <PriceLabel store={store} />
+                  </p>
+                  <p className="truncate text-[11px] text-text-secondary">{store.genre}</p>
                 </div>
                 <button
                   type="button"

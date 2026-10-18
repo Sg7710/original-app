@@ -3,57 +3,93 @@
 import { useState } from "react";
 import type { Store } from "@/types/store";
 import type { LikeEntry } from "@/types/social";
+import { PhotoViewer } from "./PhotoViewer";
+import { DirectionsLink, OPEN_STATUS_LOOK, StoreDetailRow } from "./StoreDetailRow";
+import { NoMatchingStores, StoreFilterBar, useStoreFilters } from "./StoreFilters";
+
+/** 店ごとにまとめた履歴の1行: 一番新しいいいねと、いいねした回数。 */
+export interface HistoryEntry extends LikeEntry {
+  count: number;
+}
 
 interface FavListHistoryViewProps {
-  history: LikeEntry[];
+  history: HistoryEntry[];
   stores: Store[];
+  /** Liked stores outside the current search are still being re-fetched. */
+  loading: boolean;
   myFavoritePlaceIds: Set<string>;
   onToggleMine: (placeId: string) => void;
   onBulkAdd: (placeIds: string[]) => void;
 }
 
-interface HistoryRow {
-  entry: LikeEntry;
-  store: Store;
+interface DayGroup {
+  label: string;
+  date: Date;
+  rows: { entry: HistoryEntry; store: Store }[];
 }
+
+const TODAY = "今日";
 
 function dayLabel(date: Date, today: Date): string {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   const t = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   const diffDays = Math.round((t - d) / 86_400_000);
-  if (diffDays === 0) return "今日";
+  if (diffDays === 0) return TODAY;
   if (diffDays === 1) return "昨日";
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
-function formatTime(date: Date): string {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
+/**
+ * 「食べたい」タブ: 右スワイプした店を見比べて、気になる店を「自分」のリストに入れる場所。
+ * 今日の分だけ開いておき、昨日より前は日付を押すと開く(履歴は7日で消える)。
+ */
 export function FavListHistoryView({
   history,
   stores,
+  loading,
   myFavoritePlaceIds,
   onToggleMine,
   onBulkAdd,
 }: FavListHistoryViewProps) {
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [openDays, setOpenDays] = useState<Set<string>>(() => new Set([TODAY]));
+  const [viewing, setViewing] = useState<Store | null>(null);
+  const filters = useStoreFilters();
 
-  const rows: HistoryRow[] = history
-    .map((entry) => {
-      const store = stores.find((s) => s.placeId === entry.placeId);
-      return store ? { entry, store } : null;
-    })
-    .filter((r): r is HistoryRow => r !== null);
-
+  // 日付ごとにまとめる(履歴は新しい順なので、日付も新しい順になる)。
   const now = new Date();
-  const groups = new Map<string, HistoryRow[]>();
-  for (const row of rows) {
-    const label = dayLabel(new Date(row.entry.likedAt), now);
-    const list = groups.get(label) ?? [];
-    list.push(row);
-    groups.set(label, list);
+  const groups: DayGroup[] = [];
+  for (const entry of history) {
+    const store = stores.find((s) => s.placeId === entry.placeId);
+    if (!store) continue;
+    const date = new Date(entry.likedAt);
+    const label = dayLabel(date, now);
+    let group = groups.find((g) => g.label === label);
+    if (!group) {
+      group = { label, date, rows: [] };
+      groups.push(group);
+    }
+    group.rows.push({ entry, store });
+  }
+  const total = groups.reduce((n, g) => n + g.rows.length, 0);
+
+  // 絞り込み・並べ替えは日付ごとに行う。
+  const shownGroups = groups
+    .map((g) => {
+      const kept = filters.apply(g.rows.map((r) => r.store));
+      return { ...g, rows: kept.map((s) => g.rows.find((r) => r.store === s)!) };
+    })
+    .filter((g) => g.rows.length > 0 || !filters.narrowing);
+  const shown = shownGroups.reduce((n, g) => n + g.rows.length, 0);
+
+  function toggleDay(label: string) {
+    setOpenDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
   }
 
   function toggleSelecting() {
@@ -78,104 +114,151 @@ export function FavListHistoryView({
     setPicked(new Set());
   }
 
+  if (total === 0) {
+    return (
+      <p className="flex-1 pt-10 text-center text-sm text-text-secondary">
+        {loading ? "読み込んでいます…" : "まだありません。スワイプで右にした店がここに並びます"}
+      </p>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between px-5 pb-3">
-        <p className="text-[11px] text-text-secondary">右スワイプした店は自動で残ります</p>
-        <button
-          type="button"
-          onClick={toggleSelecting}
-          className={`flex h-9 shrink-0 items-center rounded-[18px] px-3.5 text-xs font-bold ${
-            selecting
-              ? "border border-text-primary bg-text-primary text-app"
-              : "border border-[rgba(26,24,19,0.12)] bg-white text-text-primary"
-          }`}
-        >
-          {selecting ? "やめる" : "選んで追加"}
-        </button>
+      <div className="flex shrink-0 flex-col gap-2 px-5 pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] text-text-secondary">見比べて、気になる店をリストへ</p>
+          <button
+            type="button"
+            onClick={toggleSelecting}
+            className={`flex h-9 shrink-0 items-center rounded-[18px] px-3.5 text-xs font-bold ${
+              selecting
+                ? "border border-text-primary bg-text-primary text-app"
+                : "border border-[rgba(26,24,19,0.12)] bg-white text-text-primary"
+            }`}
+          >
+            {selecting ? "やめる" : "選んで追加"}
+          </button>
+        </div>
+        <StoreFilterBar filters={filters} shown={shown} total={total} />
       </div>
 
-      <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-5 pb-5">
-        {rows.length === 0 ? (
-          <p className="pt-10 text-center text-sm text-text-secondary">まだ履歴がありません</p>
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5">
+        {!groups.some((g) => g.label === TODAY) && (
+          <p className="text-center text-xs text-text-tertiary">今日はまだいいねしていません</p>
+        )}
+        {shownGroups.length === 0 ? (
+          <NoMatchingStores onReset={filters.reset} />
         ) : (
-          Array.from(groups.entries()).map(([label, groupRows]) => (
-            <div key={label} className="flex flex-col gap-2.5">
-              <div className="flex items-baseline gap-2">
-                <p className="text-[13px] font-bold text-text-primary">{label}</p>
-                <p className="font-mono text-[10px] text-text-tertiary">
-                  {new Date(groupRows[0].entry.likedAt).getMonth() + 1}/
-                  {new Date(groupRows[0].entry.likedAt).getDate()}
-                </p>
-              </div>
-              {groupRows.map(({ entry, store }) => {
-                const alreadyMine = myFavoritePlaceIds.has(store.placeId);
-                const isPicked = picked.has(store.placeId);
-                return (
-                  <div
-                    key={`${store.placeId}-${entry.likedAt}`}
-                    role={selecting ? "button" : undefined}
-                    tabIndex={selecting ? 0 : undefined}
-                    onClick={selecting ? () => toggleRowPicked(store.placeId) : undefined}
-                    className="flex items-center gap-3 rounded-[18px] border bg-white p-2.5"
-                    style={{
-                      borderColor: isPicked ? "var(--accent)" : "rgba(26,24,19,0.07)",
-                      cursor: selecting && !alreadyMine ? "pointer" : undefined,
-                    }}
-                  >
-                    {selecting && (
-                      <span
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
-                        style={
-                          alreadyMine
-                            ? { backgroundColor: "#F1EEE7" }
-                            : isPicked
-                              ? { backgroundColor: "var(--accent)", color: "#fff" }
-                              : { border: "1.5px solid rgba(26,24,19,0.2)", backgroundColor: "#fff" }
-                        }
-                      >
-                        {alreadyMine ? (
-                          <span className="text-[9px] font-bold text-text-tertiary">済</span>
-                        ) : isPicked ? (
-                          "✓"
-                        ) : null}
-                      </span>
-                    )}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={store.photoUrl}
-                      alt={store.name}
-                      className="h-[52px] w-[52px] shrink-0 rounded-[13px] object-cover"
-                      style={{ opacity: selecting && alreadyMine ? 0.45 : 1 }}
-                    />
-                    <div className="flex min-w-0 flex-1 flex-col gap-1">
-                      <p className="truncate text-sm font-bold text-text-primary">{store.name}</p>
-                      <p className="font-mono text-[11px] text-text-secondary">
-                        {formatTime(new Date(entry.likedAt))} / {store.genre} / {store.price ?? "?"}
-                      </p>
-                    </div>
-                    {!selecting && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleMine(store.placeId);
-                        }}
-                        className={`h-10 shrink-0 rounded-[20px] px-3.5 text-[11px] font-bold ${
-                          alreadyMine
-                            ? "bg-tab-active text-[#8A8474]"
-                            : "border bg-white text-[#8F5E10]"
-                        }`}
-                        style={!alreadyMine ? { borderColor: "var(--accent)" } : undefined}
-                      >
-                        {alreadyMine ? "リスト済み" : "＋ リストへ"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))
+          shownGroups.map((group) => {
+            const open = openDays.has(group.label);
+            return (
+              <section key={group.label} className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => toggleDay(group.label)}
+                  className="flex h-9 items-center gap-2 text-left"
+                >
+                  <span className="text-[13px] font-bold text-text-primary">{group.label}</span>
+                  {/* 「今日」「昨日」のときだけ日付を横に添える(それ以外は見出しがもう日付) */}
+                  {(group.label === TODAY || group.label === "昨日") && (
+                    <span className="font-mono text-[10px] text-text-tertiary">
+                      {group.date.getMonth() + 1}/{group.date.getDate()}
+                    </span>
+                  )}
+                  <span className="text-[11px] text-text-secondary">・{group.rows.length}件</span>
+                  <span aria-hidden className="ml-auto text-xs text-text-tertiary">
+                    {open ? "▲ 閉じる" : "▼ 見る"}
+                  </span>
+                </button>
+                {open && (
+                  <ul className="flex flex-col gap-3">
+                    {group.rows.map(({ entry, store }) => {
+                      const alreadyMine = myFavoritePlaceIds.has(store.placeId);
+                      const isPicked = picked.has(store.placeId);
+                      const status = filters.statusOf(store);
+                      const look = OPEN_STATUS_LOOK[status];
+                      return (
+                        <li
+                          key={store.placeId}
+                          role={selecting ? "button" : undefined}
+                          tabIndex={selecting ? 0 : undefined}
+                          onClick={selecting ? () => toggleRowPicked(store.placeId) : undefined}
+                          className="flex flex-col gap-2 rounded-[20px] border p-3"
+                          style={{
+                            backgroundColor: look.background,
+                            borderColor: isPicked ? "var(--accent)" : look.border,
+                            cursor: selecting && !alreadyMine ? "pointer" : undefined,
+                          }}
+                        >
+                          <StoreDetailRow
+                            store={store}
+                            status={status}
+                            onOpenPhoto={() => setViewing(store)}
+                            dimmed={selecting && alreadyMine}
+                            badge={
+                              entry.count > 1 && (
+                                <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-text-primary">
+                                  {entry.count}回
+                                </span>
+                              )
+                            }
+                            leading={
+                              selecting && (
+                                <span
+                                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
+                                  style={
+                                    alreadyMine
+                                      ? { backgroundColor: "#F1EEE7" }
+                                      : isPicked
+                                        ? { backgroundColor: "var(--accent)", color: "#fff" }
+                                        : {
+                                            border: "1.5px solid rgba(26,24,19,0.2)",
+                                            backgroundColor: "#fff",
+                                          }
+                                  }
+                                >
+                                  {alreadyMine ? (
+                                    <span className="text-[9px] font-bold text-text-tertiary">
+                                      済
+                                    </span>
+                                  ) : isPicked ? (
+                                    "✓"
+                                  ) : null}
+                                </span>
+                              )
+                            }
+                            actions={
+                              !selecting && (
+                                <>
+                                  <DirectionsLink store={store} />
+                                  <button
+                                    type="button"
+                                    onClick={() => onToggleMine(store.placeId)}
+                                    aria-pressed={alreadyMine}
+                                    className={`h-11 min-w-[72px] rounded-[22px] px-3 text-[11px] font-bold ${
+                                      alreadyMine
+                                        ? "bg-tab-active text-[#8A8474]"
+                                        : "border bg-white text-[#8F5E10]"
+                                    }`}
+                                    style={
+                                      !alreadyMine ? { borderColor: "var(--accent)" } : undefined
+                                    }
+                                  >
+                                    {alreadyMine ? "リスト済み" : "＋ リスト"}
+                                  </button>
+                                </>
+                              )
+                            }
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            );
+          })
         )}
       </div>
 
@@ -189,10 +272,11 @@ export function FavListHistoryView({
               picked.size > 0 ? "bg-accent text-white" : "bg-tab-active text-text-tertiary"
             }`}
           >
-            {picked.size > 0 ? `${picked.size}件を食べたいリストに追加` : "店を選んでください"}
+            {picked.size > 0 ? `${picked.size}件を「自分」に追加` : "店を選んでください"}
           </button>
         </div>
       )}
+      {viewing && <PhotoViewer store={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

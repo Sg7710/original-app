@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { isDevMode } from "@/lib/meshi/dev-mode";
+import { signOutToLogin } from "@/lib/supabase/sign-out";
 import { Avatar } from "./Avatar";
 
 interface ProfilePopupProps {
@@ -11,6 +10,7 @@ interface ProfilePopupProps {
   likeCount: number;
   peopleCount: number;
   onClose: () => void;
+  onOpenSettings: () => void;
 }
 
 function MenuItem({
@@ -40,20 +40,20 @@ function MenuItem({
   );
 }
 
-export function ProfilePopup({ name, favCount, likeCount, peopleCount, onClose }: ProfilePopupProps) {
+export function ProfilePopup({
+  name,
+  favCount,
+  likeCount,
+  peopleCount,
+  onClose,
+  onOpenSettings,
+}: ProfilePopupProps) {
   const [loggingOut, setLoggingOut] = useState(false);
 
   async function handleLogout() {
     if (loggingOut) return;
-    if (isDevMode()) {
-      onClose();
-      return;
-    }
     setLoggingOut(true);
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = "/login";
+    await signOutToLogin();
   }
 
   return (
@@ -63,7 +63,7 @@ export function ProfilePopup({ name, favCount, likeCount, peopleCount, onClose }
       onClick={onClose}
     >
       <div
-        className="absolute right-4 top-14 w-[248px] overflow-hidden rounded-[20px] border border-card-border bg-white"
+        className="animate-popup-in absolute right-4 top-14 w-[248px] origin-top-right overflow-hidden rounded-[20px] border border-card-border bg-white"
         style={{ boxShadow: "0 18px 44px rgba(26,24,19,0.16)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -77,9 +77,9 @@ export function ProfilePopup({ name, favCount, likeCount, peopleCount, onClose }
           </div>
         </div>
         <div className="border-t border-card-border py-1.5">
-          <MenuItem label="プロフィールを編集" />
+          <MenuItem label="プロフィールを編集" onClick={onOpenSettings} />
           <MenuItem label="一緒に行く人" trailing={`${peopleCount}人`} />
-          <MenuItem label="設定" />
+          <MenuItem label="設定" onClick={onOpenSettings} />
         </div>
         <div className="border-t border-card-border py-1.5">
           <MenuItem

@@ -1,0 +1,396 @@
+openapi: 3.1.0
+info:
+  title: 直観メシ API
+  version: 1.0.0
+  description: |
+    直観メシのブラウザから呼ぶAPIの一覧です。2種類あります。
+
+    1. **お店API**（このNext.jsアプリの中、`/api/...`）
+       Google Places / Routes を呼ぶ窓口。Googleの鍵をブラウザに渡さないためにサーバー側に置いています。
+       実装: `src/app/api/**/route.ts`
+    2. **DB API**（Supabase が自動で用意する `/rest/v1/...`）
+       食べたいリストといいね履歴の保存先。テーブルは `supabase/schema.sql`。
+       自分でAPIを書く必要はなく、ブラウザから `supabase-js` で直接読み書きします。
+       「本人の行しか触れない」はDB側のRLSで守られています。
+
+    お店の名前・写真などはDBに保存しません。DBには place ID だけを入れ、
+    表示するときに `POST /api/stores/lookup` で取り直します。
+
+servers:
+  - url: /
+    description: 直観メシ本体（Next.js）
+
+tags:
+  - name: お店
+    description: Google からお店を探す・取り直す（Next.js の API Route）
+  - name: 食べたいリスト
+    description: DB の favorites テーブル（Supabase）
+  - name: いいね履歴
+    description: DB の like_history テーブル（Supabase）
+
+paths:
+  # ───────────────────────── お店API（Next.js） ─────────────────────────
+  /api/stores:
+    post:
+      tags: [お店]
+      summary: 近くのお店を探す
+      description: |
+        現在地のまわりで、今開いている店（と1時間以内に開く店）を最大20件返します。
+        半径1500mで0件だったときは、自動で3000mに広げてもう一度探します。
+        アプリを開いたときに1回だけ呼びます。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat: { type: number, description: 緯度, example: 36.0623 }
+                lng: { type: number, description: 経度, example: 136.2232 }
+                radius:
+                  type: integer
+                  enum: [1500, 3000, 5000]
+                  default: 1500
+                  description: 探す半径（メートル）
+      responses:
+        "200":
+          description: 見つかったお店
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stores, radius]
+                properties:
+                  stores:
+                    type: array
+                    maxItems: 20
+                    items: { $ref: "#/components/schemas/Store" }
+                  radius:
+                    type: integer
+                    description: 実際に使った半径。自動で広げたときは 3000 になる
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /api/stores/lookup:
+    post:
+      tags: [お店]
+      summary: place ID からお店を取り直す
+      description: |
+        食べたいリスト・いいね履歴を表示するときに、DBに保存してある place ID から
+        お店の名前・写真などを取り直します。営業時間は取りません（`opensAt` は常に null）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [placeIds]
+              properties:
+                placeIds:
+                  type: array
+                  maxItems: 30
+                  items: { $ref: "#/components/schemas/PlaceId" }
+                origin:
+                  description: 現在地。渡すと徒歩分数も計算する。なければ walkMinutes は null
+                  type: object
+                  required: [lat, lng]
+                  properties:
+                    lat: { type: number }
+                    lng: { type: number }
+      responses:
+        "200":
+          description: 取り直したお店（閉店などで取れなかった店は入らない）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stores]
+                properties:
+                  stores:
+                    type: array
+                    items: { $ref: "#/components/schemas/Store" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /api/places/photo:
+    get:
+      tags: [お店]
+      summary: お店の写真を取る
+      description: |
+        Google の写真をサーバー経由で返します（鍵を隠すため）。
+        `Store.photoUrl` にこのURLが入っているので、`<img src>` にそのまま使います。
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: Google の写真リソース名（`places/` で始まる）
+          schema: { type: string, example: "places/ChIJxxxx/photos/AelYxxxx" }
+      responses:
+        "200":
+          description: 画像そのもの（1時間キャッシュ可）
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500":
+          description: サーバーに Google の鍵が設定されていない
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  # ───────────────────────── DB API（Supabase） ─────────────────────────
+  # supabase-js が裏で呼ぶURL。コードでは右の書き方をする想定（説明欄の「supabase-js」）。
+  /rest/v1/favorites:
+    servers:
+      - url: https://{project}.supabase.co
+        variables:
+          project: { default: your-project-ref }
+    get:
+      tags: [食べたいリスト]
+      summary: 自分の食べたいリストを取る
+      description: |
+        新しく追加した順に返します。RLSにより自分の行だけが返ります。
+
+        supabase-js:
+        ```ts
+        supabase.from("favorites").select("place_id, created_at").order("created_at", { ascending: false })
+        ```
+      security: [{ SupabaseUser: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApiKey"
+        - { name: select, in: query, schema: { type: string, example: "place_id,created_at" } }
+        - { name: order, in: query, schema: { type: string, example: "created_at.desc" } }
+      responses:
+        "200":
+          description: 自分の食べたいリスト
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Favorite" }
+        "401": { $ref: "#/components/responses/NotLoggedIn" }
+    post:
+      tags: [食べたいリスト]
+      summary: 食べたいリストに追加する
+      description: |
+        右スワイプしたときに呼びます。もう入っている店なら何もしません（エラーにもならない）。
+        `user_id` は送らなくても、DB がログイン中の人を自動で入れます。
+
+        supabase-js:
+        ```ts
+        supabase.from("favorites").upsert({ place_id }, { onConflict: "user_id,place_id", ignoreDuplicates: true })
+        ```
+      security: [{ SupabaseUser: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApiKey"
+        - { name: on_conflict, in: query, schema: { type: string, example: "user_id,place_id" } }
+        - name: Prefer
+          in: header
+          schema: { type: string, example: "resolution=ignore-duplicates" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [place_id]
+              properties:
+                place_id: { $ref: "#/components/schemas/PlaceId" }
+      responses:
+        "201": { description: 追加した（または既に入っていた） }
+        "401": { $ref: "#/components/responses/NotLoggedIn" }
+    delete:
+      tags: [食べたいリスト]
+      summary: 食べたいリストからはずす
+      description: |
+        supabase-js:
+        ```ts
+        supabase.from("favorites").delete().eq("place_id", placeId)
+        ```
+      security: [{ SupabaseUser: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApiKey"
+        - name: place_id
+          in: query
+          required: true
+          description: "`eq.` を付けて指定する"
+          schema: { type: string, example: "eq.ChIJN1t_tDeuEmsRUsoyG83frY4" }
+      responses:
+        "204": { description: はずした（入っていなくても 204） }
+        "401": { $ref: "#/components/responses/NotLoggedIn" }
+
+  /rest/v1/like_history:
+    servers:
+      - url: https://{project}.supabase.co
+        variables:
+          project: { default: your-project-ref }
+    get:
+      tags: [いいね履歴]
+      summary: 自分のいいね履歴を取る（直近7日・最大30件）
+      description: |
+        supabase-js:
+        ```ts
+        supabase.from("like_history").select("place_id, liked_at")
+          .gte("liked_at", sevenDaysAgoIso).order("liked_at", { ascending: false }).limit(30)
+        ```
+      security: [{ SupabaseUser: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApiKey"
+        - { name: select, in: query, schema: { type: string, example: "place_id,liked_at" } }
+        - { name: liked_at, in: query, schema: { type: string, example: "gte.2026-10-06T00:00:00Z" } }
+        - { name: order, in: query, schema: { type: string, example: "liked_at.desc" } }
+        - { name: limit, in: query, schema: { type: integer, example: 30 } }
+      responses:
+        "200":
+          description: 自分のいいね履歴
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 30
+                items: { $ref: "#/components/schemas/LikeEntry" }
+        "401": { $ref: "#/components/responses/NotLoggedIn" }
+    post:
+      tags: [いいね履歴]
+      summary: いいねを記録する
+      description: |
+        右スワイプのたびに1行追加します（同じ店でも毎回）。
+
+        supabase-js:
+        ```ts
+        supabase.from("like_history").insert({ place_id })
+        ```
+      security: [{ SupabaseUser: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApiKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [place_id]
+              properties:
+                place_id: { $ref: "#/components/schemas/PlaceId" }
+      responses:
+        "201": { description: 記録した }
+        "401": { $ref: "#/components/responses/NotLoggedIn" }
+    delete:
+      tags: [いいね履歴]
+      summary: 7日より古い記録を消す
+      description: |
+        履歴を開いたついでに呼ぶ掃除用。
+
+        supabase-js:
+        ```ts
+        supabase.from("like_history").delete().lt("liked_at", sevenDaysAgoIso)
+        ```
+      security: [{ SupabaseUser: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApiKey"
+        - name: liked_at
+          in: query
+          required: true
+          schema: { type: string, example: "lt.2026-10-06T00:00:00Z" }
+      responses:
+        "204": { description: 消した }
+        "401": { $ref: "#/components/responses/NotLoggedIn" }
+
+components:
+  securitySchemes:
+    SupabaseUser:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: ログイン中のユーザーのトークン。supabase-js が自動で付ける
+
+  parameters:
+    ApiKey:
+      name: apikey
+      in: header
+      required: true
+      description: Supabase の公開キー（anon key）。supabase-js が自動で付ける
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: 送った値がおかしい
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "lat/lng is required" }
+    UpstreamError:
+      description: Google 側の呼び出しに失敗した
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "failed to fetch stores" }
+    NotLoggedIn:
+      description: ログインしていない（トークンがない・切れている）
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    PlaceId:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{10,300}$"
+      description: Google のお店ID
+      example: ChIJN1t_tDeuEmsRUsoyG83frY4
+
+    StorePhoto:
+      type: object
+      required: [url, attribution]
+      properties:
+        url: { type: string, example: "/api/places/photo?name=places/ChIJxxxx/photos/AelYxxxx" }
+        attribution: { type: string, description: 写真の撮影者表示 }
+
+    Store:
+      type: object
+      description: 画面に出す1件のお店（`src/types/store.ts` と同じ形）
+      required: [placeId, name, genre, price, priceTier, photoUrl, photoAttribution, photos, lat, lng, walkMinutes, opensAt]
+      properties:
+        placeId: { $ref: "#/components/schemas/PlaceId" }
+        name: { type: string, example: 焼き鳥 とり吉 }
+        genre: { type: string, example: 焼き鳥 }
+        price:
+          type: [string, "null"]
+          description: 表示用の値段（"¥1,000〜2,000" や "¥¥"）
+          example: "¥1,000〜2,000"
+        priceTier:
+          type: [integer, "null"]
+          enum: [1, 2, 3, 4, null]
+          description: "1=¥2,000未満 / 2=¥2,000台 / 3=¥3,000〜5,999 / 4=¥6,000以上"
+        photoUrl: { type: string }
+        photoAttribution: { type: string }
+        photos:
+          type: array
+          items: { $ref: "#/components/schemas/StorePhoto" }
+        lat: { type: number }
+        lng: { type: number }
+        walkMinutes:
+          type: [integer, "null"]
+          description: 徒歩何分か。計算していないときは null
+        opensAt:
+          type: [string, "null"]
+          format: date-time
+          description: 次に開く時刻。今開いているなら null
+
+    Favorite:
+      type: object
+      required: [place_id, created_at]
+      properties:
+        place_id: { $ref: "#/components/schemas/PlaceId" }
+        created_at: { type: string, format: date-time }
+
+    LikeEntry:
+      type: object
+      required: [place_id, liked_at]
+      properties:
+        place_id: { $ref: "#/components/schemas/PlaceId" }
+        liked_at: { type: string, format: date-time }

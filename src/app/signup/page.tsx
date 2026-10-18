@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isDevMode } from "@/lib/meshi/dev-mode";
+import { isAuthBypassed } from "@/lib/meshi/dev-mode";
 import { SignupForm } from "./SignupForm";
 
 export default async function SignupPage() {
-  if (!isDevMode()) {
+  if (!isAuthBypassed()) {
     const supabase = await createClient();
     const {
       data: { user },

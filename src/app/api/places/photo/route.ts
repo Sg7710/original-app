@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-const MAX_WIDTH_PX = 900;
+// 料金は1枚ごとで大きさに関係ないので、スマホの高解像度画面でもぼやけない大きさで取る。
+const MAX_WIDTH_PX = 1200;
 
 /**
  * Proxies Places Photo media so the Google API key never reaches the browser.

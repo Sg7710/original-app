@@ -5,12 +5,18 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { FRAME_CLASS } from "@/components/meshi/frame";
 import { GoogleLoginButton } from "@/components/auth/GoogleLoginButton";
+import { authErrorMessage } from "@/lib/supabase/auth-errors";
 
-export function LoginForm() {
+interface LoginFormProps {
+  initialError: string | null;
+  notice: string | null;
+}
+
+export function LoginForm({ initialError, notice }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sending, setSending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(initialError);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,7 +29,7 @@ export function LoginForm() {
     setSending(false);
 
     if (error) {
-      setErrorMessage("メールアドレスまたはパスワードが違います。");
+      setErrorMessage(authErrorMessage(error, "ログインに失敗しました。もう一度お試しください。"));
       return;
     }
     // Full reload so the server re-checks the session cookie signInWithPassword just set.
@@ -36,6 +42,11 @@ export function LoginForm() {
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
         <h2 className="text-lg font-bold text-text-primary">ログイン</h2>
         <p className="text-sm text-text-secondary">メールアドレスとパスワードを入力してください。</p>
+        {notice && !errorMessage && (
+          <p role="status" className="mt-2 text-xs font-bold text-[#2E9E63]">
+            {notice}
+          </p>
+        )}
         <form onSubmit={handleSubmit} className="mt-4 flex w-full max-w-[280px] flex-col gap-3">
           <input
             type="email"
@@ -62,7 +73,12 @@ export function LoginForm() {
           >
             {sending ? "ログイン中…" : "ログイン"}
           </button>
-          {errorMessage && <p className="text-xs text-[#D8452F]">{errorMessage}</p>}
+          <p role="alert" aria-live="assertive" className="text-xs text-[#D8452F]">
+            {errorMessage}
+          </p>
+          <Link href="/reset-password" className="text-xs font-bold text-text-tertiary">
+            パスワードを忘れた方
+          </Link>
         </form>
 
         <div className="mt-4 flex w-full max-w-[280px] items-center gap-3">

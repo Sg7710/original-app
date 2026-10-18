@@ -1,14 +1,15 @@
 "use client";
 
 import type { LocationStatus } from "@/hooks/useLocation";
-import { isDevMode } from "@/lib/meshi/dev-mode";
-import { LogoutButton } from "@/components/auth/LogoutButton";
-
-const SEARCH_RADIUS_M = 1500;
+import type { MaxPriceTier } from "@/hooks/useAccount";
+import { priceLimitLabel, radiusLabel, SlidersIcon } from "./SearchConditions";
 
 interface HeaderProps {
   locationStatus: LocationStatus;
-  storeCount: number | null;
+  /** The radius actually being searched (may be widened just for this session). */
+  radiusM: number;
+  maxPriceTier: MaxPriceTier;
+  onOpenConditions: () => void;
 }
 
 const STATUS_DOT: Record<LocationStatus, string> = {
@@ -27,24 +28,23 @@ const STATUS_LABEL: Record<LocationStatus, string> = {
   error: "現在地を取得できませんでした",
 };
 
-export function Header({ locationStatus, storeCount }: HeaderProps) {
+export function Header({ locationStatus, radiusM, maxPriceTier, onOpenConditions }: HeaderProps) {
+  const conditions = `${radiusLabel(radiusM)} · ${priceLimitLabel(maxPriceTier)}`;
   return (
-    <div className="shrink-0 px-5 pt-5">
-      <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center justify-between gap-2 px-5 pt-5">
+      <button
+        type="button"
+        onClick={onOpenConditions}
+        aria-label={`探す条件を変える（いまは ${conditions}）`}
+        className="flex h-11 min-w-0 items-center gap-1.5 rounded-full border border-card-border bg-white px-3.5 text-xs font-bold text-text-primary shadow-[0_2px_8px_rgba(26,24,19,0.06)]"
+      >
+        <SlidersIcon />
+        <span className="truncate font-mono">{conditions}</span>
+      </button>
+      <p className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold text-text-secondary">
         <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[locationStatus]}`} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-text-primary">
-            {STATUS_LABEL[locationStatus]}
-          </p>
-          {locationStatus === "granted" && (
-            <p className="font-mono text-xs text-text-tertiary">
-              半径{SEARCH_RADIUS_M}m
-              {storeCount !== null ? ` · ${storeCount}件` : ""}
-            </p>
-          )}
-        </div>
-        {!isDevMode() && <LogoutButton />}
-      </div>
+        <span className="truncate">{STATUS_LABEL[locationStatus]}</span>
+      </p>
     </div>
   );
 }

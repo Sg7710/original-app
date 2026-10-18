@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { FRAME_CLASS } from "@/components/meshi/frame";
+import { authErrorMessage } from "@/lib/supabase/auth-errors";
 
 type Status = "form" | "sending" | "confirm-email";
 
@@ -35,11 +36,7 @@ export function SignupForm() {
     });
 
     if (error) {
-      setErrorMessage(
-        error.message.includes("already registered") || error.message.includes("already exists")
-          ? "このメールアドレスはすでに登録されています。"
-          : "登録に失敗しました。もう一度お試しください。",
-      );
+      setErrorMessage(authErrorMessage(error, "登録に失敗しました。もう一度お試しください。"));
       setStatus("form");
       return;
     }
@@ -66,6 +63,9 @@ export function SignupForm() {
             <p className="mt-1 text-xs text-text-tertiary">
               ※ メールを開くのと同じブラウザでリンクを開いてください。
             </p>
+            <Link href="/login" className="mt-4 text-xs font-bold text-text-tertiary">
+              ログイン画面に戻る
+            </Link>
           </>
         ) : (
           <>
@@ -113,7 +113,9 @@ export function SignupForm() {
               >
                 {status === "sending" ? "登録中…" : "登録する"}
               </button>
-              {errorMessage && <p className="text-xs text-[#D8452F]">{errorMessage}</p>}
+              <p role="alert" aria-live="assertive" className="text-xs text-[#D8452F]">
+                {errorMessage}
+              </p>
             </form>
             <Link href="/login" className="mt-4 text-xs font-bold text-text-tertiary">
               すでにアカウントをお持ちの方はこちら

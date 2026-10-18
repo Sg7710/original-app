@@ -1,7 +1,7 @@
 import type { Store } from "@/types/store";
 
 /**
- * 開発用のダミーデータ。isDevMode() が true のときだけ useStores から使われる。
+ * 開発用のダミーデータ。isMockStores() が true のときだけ useStores から使われる。
  * 京都・河原町三条エリアを想定した架空8店舗(以前のプロトタイプ版を新Store型に合わせて再構成)。
  */
 export const MOCK_STORES: Store[] = [
@@ -12,9 +12,19 @@ export const MOCK_STORES: Store[] = [
     price: "¥¥",
     photoUrl: "https://picsum.photos/seed/meshi-1/800/1000",
     photoAttribution: "ダミー画像(開発用)",
+    photos: [
+      { url: "https://picsum.photos/seed/meshi-1/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-1-b/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-1-c/800/1000", attribution: "ダミー画像(開発用)" },
+    ],
     lat: 35.0091,
     lng: 135.7701,
     walkMinutes: 4,
+    opensAt: null,
+    openNow: true,
+    closesAt: null,
+    websiteUrl: null,
+    priceTier: null,
   },
   {
     placeId: "mock-2",
@@ -23,9 +33,19 @@ export const MOCK_STORES: Store[] = [
     price: "¥",
     photoUrl: "https://picsum.photos/seed/meshi-2/800/1000",
     photoAttribution: "ダミー画像(開発用)",
+    photos: [
+      { url: "https://picsum.photos/seed/meshi-2/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-2-b/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-2-c/800/1000", attribution: "ダミー画像(開発用)" },
+    ],
     lat: 35.0088,
     lng: 135.7695,
     walkMinutes: 2,
+    opensAt: null,
+    openNow: true,
+    closesAt: null,
+    websiteUrl: null,
+    priceTier: null,
   },
   {
     placeId: "mock-3",
@@ -34,9 +54,19 @@ export const MOCK_STORES: Store[] = [
     price: "¥",
     photoUrl: "https://picsum.photos/seed/meshi-3/800/1000",
     photoAttribution: "ダミー画像(開発用)",
+    photos: [
+      { url: "https://picsum.photos/seed/meshi-3/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-3-b/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-3-c/800/1000", attribution: "ダミー画像(開発用)" },
+    ],
     lat: 35.0075,
     lng: 135.7706,
     walkMinutes: 3,
+    opensAt: null,
+    openNow: true,
+    closesAt: null,
+    websiteUrl: null,
+    priceTier: null,
   },
   {
     placeId: "mock-4",
@@ -45,9 +75,19 @@ export const MOCK_STORES: Store[] = [
     price: "¥¥",
     photoUrl: "https://picsum.photos/seed/meshi-4/800/1000",
     photoAttribution: "ダミー画像(開発用)",
+    photos: [
+      { url: "https://picsum.photos/seed/meshi-4/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-4-b/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-4-c/800/1000", attribution: "ダミー画像(開発用)" },
+    ],
     lat: 35.0102,
     lng: 135.7683,
     walkMinutes: 7,
+    opensAt: null,
+    openNow: true,
+    closesAt: null,
+    websiteUrl: null,
+    priceTier: null,
   },
   {
     placeId: "mock-5",
@@ -56,9 +96,19 @@ export const MOCK_STORES: Store[] = [
     price: "¥",
     photoUrl: "https://picsum.photos/seed/meshi-5/800/1000",
     photoAttribution: "ダミー画像(開発用)",
+    photos: [
+      { url: "https://picsum.photos/seed/meshi-5/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-5-b/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-5-c/800/1000", attribution: "ダミー画像(開発用)" },
+    ],
     lat: 35.0083,
     lng: 135.7699,
     walkMinutes: 1,
+    opensAt: null,
+    openNow: true,
+    closesAt: null,
+    websiteUrl: null,
+    priceTier: null,
   },
   {
     placeId: "mock-6",
@@ -67,9 +117,19 @@ export const MOCK_STORES: Store[] = [
     price: "¥¥",
     photoUrl: "https://picsum.photos/seed/meshi-6/800/1000",
     photoAttribution: "ダミー画像(開発用)",
+    photos: [
+      { url: "https://picsum.photos/seed/meshi-6/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-6-b/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-6-c/800/1000", attribution: "ダミー画像(開発用)" },
+    ],
     lat: 35.0079,
     lng: 135.7718,
     walkMinutes: 5,
+    opensAt: null,
+    openNow: true,
+    closesAt: null,
+    websiteUrl: null,
+    priceTier: null,
   },
   {
     placeId: "mock-7",
@@ -78,9 +138,19 @@ export const MOCK_STORES: Store[] = [
     price: "¥¥¥",
     photoUrl: "https://picsum.photos/seed/meshi-7/800/1000",
     photoAttribution: "ダミー画像(開発用)",
+    photos: [
+      { url: "https://picsum.photos/seed/meshi-7/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-7-b/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-7-c/800/1000", attribution: "ダミー画像(開発用)" },
+    ],
     lat: 35.0117,
     lng: 135.7712,
     walkMinutes: 9,
+    opensAt: null,
+    openNow: true,
+    closesAt: null,
+    websiteUrl: null,
+    priceTier: null,
   },
   {
     placeId: "mock-8",
@@ -89,8 +159,18 @@ export const MOCK_STORES: Store[] = [
     price: "¥¥",
     photoUrl: "https://picsum.photos/seed/meshi-8/800/1000",
     photoAttribution: "ダミー画像(開発用)",
+    photos: [
+      { url: "https://picsum.photos/seed/meshi-8/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-8-b/800/1000", attribution: "ダミー画像(開発用)" },
+      { url: "https://picsum.photos/seed/meshi-8-c/800/1000", attribution: "ダミー画像(開発用)" },
+    ],
     lat: 35.0056,
     lng: 135.7674,
     walkMinutes: 12,
+    opensAt: null,
+    openNow: true,
+    closesAt: null,
+    websiteUrl: null,
+    priceTier: null,
   },
 ];

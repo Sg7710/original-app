@@ -2,8 +2,12 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import type { LikeEntry } from "@/types/social";
+import { isMockStores } from "@/lib/meshi/dev-mode";
+import { isMockPlaceId } from "@/lib/meshi/derived";
 
 const STORAGE_KEY = "meshi:likeHistory";
+/** 「食べたい」(いいね履歴)に出すのは直近この日数ぶん。それより古いいいねは、スワイプにまた出る。 */
+export const LIKE_HISTORY_DAYS = 7;
 const EMPTY: LikeEntry[] = [];
 const listeners = new Set<() => void>();
 let cache: LikeEntry[] = EMPTY;
@@ -25,7 +29,12 @@ function parse(raw: string | null): LikeEntry[] {
   if (!raw) return EMPTY;
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? sortByLikedAtDesc(parsed.filter(isLikeEntry)) : EMPTY;
+    if (!Array.isArray(parsed)) return EMPTY;
+    // Drop leftovers from the mock-store era when real stores are in use.
+    const keepMock = isMockStores();
+    return sortByLikedAtDesc(
+      parsed.filter(isLikeEntry).filter((e) => keepMock || !isMockPlaceId(e.placeId)),
+    );
   } catch {
     return EMPTY;
   }

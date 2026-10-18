@@ -1,13 +1,18 @@
 /**
- * Shortcut that skips location permission + onboarding and serves mock store
- * data instead of calling the paid Places/Routes APIs.
- *
- * Hardcoded ON for now (per request) so it's gone everywhere — local dev,
- * local prod build, and the deployed Vercel site — regardless of env vars.
- * To bring back the real location-check flow, restore the env-flag version:
- *
- *   return process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEV_MODE === "true";
+ * Serves MOCK_STORES instead of calling the paid Places/Routes APIs, so UI work
+ * costs nothing. Only ever true under `next dev` with
+ * NEXT_PUBLIC_USE_MOCK_STORES=true — production builds always use real stores.
  */
-export function isDevMode(): boolean {
-  return true;
+export function isMockStores(): boolean {
+  return (
+    process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_USE_MOCK_STORES === "true"
+  );
+}
+
+/**
+ * Skips the login requirement. Only ever true under `next dev` with
+ * NEXT_PUBLIC_DEV_MODE=true, so production builds always require login.
+ */
+export function isAuthBypassed(): boolean {
+  return process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEV_MODE === "true";
 }

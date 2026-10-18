@@ -72,9 +72,9 @@ export function SwipeTab({ stores, idx, isRelapse = false, onAdvance, onLike, on
           aria-label="パスする"
           data-onboarding-target="pass"
           onClick={() => topRef.current?.commit("pass")}
-          className="flex h-[62px] w-[62px] shrink-0 items-center justify-center rounded-full border border-card-border bg-white text-2xl shadow-card"
+          className="flex h-[62px] flex-1 items-center justify-center gap-2 rounded-full border border-card-border bg-white text-base font-bold text-text-secondary shadow-card"
         >
-          ❌
+          ❌ パス
         </button>
         <button
           type="button"

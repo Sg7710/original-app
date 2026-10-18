@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFavorites } from "@/hooks/useFavorites";
-import { useLikeHistory } from "@/hooks/useLikeHistory";
+import { LIKE_HISTORY_DAYS, useLikeHistory } from "@/hooks/useLikeHistory";
 import { useLocation } from "@/hooks/useLocation";
+import { setTravelOrigin } from "@/hooks/useTravelTime";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { usePassHistory } from "@/hooks/usePassHistory";
 import { useStores } from "@/hooks/useStores";
-import { isDevMode } from "@/lib/meshi/dev-mode";
-import { shuffle } from "@/lib/meshi/derived";
+import { useAccount, type SearchRadius } from "@/hooks/useAccount";
+import { orderForDeck } from "@/lib/meshi/derived";
+import type { Store } from "@/types/store";
 import { FRAME_CLASS } from "./frame";
 import { LocationPermission } from "./LocationPermission";
 import { OnboardingChoice } from "./OnboardingChoice";
@@ -16,9 +18,11 @@ import { TutorialOverlay } from "./TutorialOverlay";
 import { Header } from "./Header";
 import { SwipeTab } from "./SwipeTab";
 import { FavListTab } from "./FavListTab";
-import { BottomTabBar } from "./BottomTabBar";
+import { BottomTabBar, type Tab } from "./BottomTabBar";
+import { SettingsPanel } from "./SettingsPanel";
+import { ConditionsSheet } from "./SearchConditions";
 
-type Tab = "swipe" | "fav";
+const RADIUS_STEPS: SearchRadius[] = [1500, 3000, 5000];
 type Stage = "location" | "choice" | "app";
 // lap1 = 1周目(全件ランダム順)、confirm = 「もう一度見ますか」、
 // lap2 = 2周目(1回だけパスされた店のみ)、done = その日は以上
@@ -29,11 +33,15 @@ function CenteredMessage({
   body,
   actionLabel,
   onAction,
+  secondaryLabel,
+  onSecondary,
 }: {
   title: string;
   body?: string;
   actionLabel?: string;
   onAction?: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
 }) {
   return (
     <div className={FRAME_CLASS}>
@@ -49,35 +57,103 @@ function CenteredMessage({
             {actionLabel}
           </button>
         )}
+        {secondaryLabel && onSecondary && (
+          <button
+            type="button"
+            onClick={onSecondary}
+            className="h-12 rounded-full border border-card-border px-6 text-sm font-bold text-text-primary"
+          >
+            {secondaryLabel}
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
 export function MeshiApp() {
-  const devMode = isDevMode();
   const frameRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>("swipe");
   const [idx, setIdx] = useState(0);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [conditionsOpen, setConditionsOpen] = useState(false);
   const [phase, setPhase] = useState<SwipePhase>("lap1");
-  const [lap2List, setLap2List] = useState<
-    ReturnType<typeof useStores>["stores"]
-  >([]);
+  const [lap2List, setLap2List] = useState<Store[]>([]);
+  // この起動中にスワイプした店。条件を変えて探し直したとき、これらは山に入れない。
+  const [swiped, setSwiped] = useState<ReadonlySet<string>>(new Set());
+  const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
 
+  const account = useAccount();
+  const { maxPriceTier } = account.settings;
+  // 「もっとお店を見てみよう」で今回だけ広げた距離。設定は変えない。
+  // 設定画面で距離を選び直したら、そちらを優先して解除する。
+  const [radiusOverride, setRadiusOverride] = useState<SearchRadius | null>(null);
+  const [settingsRadius, setSettingsRadius] = useState(account.settings.radiusM);
+  if (account.settings.radiusM !== settingsRadius) {
+    setSettingsRadius(account.settings.radiusM);
+    setRadiusOverride(null);
+  }
+  const radiusM = radiusOverride ?? account.settings.radiusM;
   const { status: locationStatus, coords, request } = useLocation();
-  const {
-    status: storesStatus,
-    stores,
-    retry: retryStores,
-  } = useStores(devMode ? coords : locationStatus === "granted" ? coords : null);
+  const searchCoords = locationStatus === "granted" ? coords : null;
+  // お店までの時間(Google の道の時間)は、この場所から計算する。
+  useEffect(() => {
+    setTravelOrigin(searchCoords);
+  }, [searchCoords]);
+  // 保存済みの距離を読み終えるまで検索しない(既定値で1回、設定値でもう1回、と二重に払わないため)。
+  const search = useStores(searchCoords, account.loaded ? radiusM : null);
+  // サーバーが1.5km→3kmに自動で広げた場合もあるので、実際に探した距離の次の段階へ。
+  const searchedRadius = search.radius ?? radiusM;
+  const nextRadius = RADIUS_STEPS.find((r) => r > searchedRadius) ?? null;
   const { favorites, addFavorite, removeFavorite, toggleFavorite } = useFavorites();
   const { history: likeHistory, recordLike } = useLikeHistory();
   const { seen: onboardingSeen, markSeen } = useOnboarding();
   const { getPassCount, recordPass } = usePassHistory();
 
-  // 1周目の並び。stores の中身が変わった(=新しく取得した)ときだけシャッフルし直す。
-  const lap1List = useMemo(() => shuffle(stores), [stores]);
+  // 「食べたい」(直近7日のいいね)か「自分」に入っている店はスワイプに出さない。
+  // 山を作った時点の状態で決める: スワイプ中にいいねした店をその場で抜くと、
+  // 山の並びがずれて次のカードが飛ばされるため。
+  const favoriteIdsNow = () => {
+    const since = Date.now() - LIKE_HISTORY_DAYS * 86_400_000;
+    const ids = new Set(favorites.map((f) => f.placeId));
+    for (const e of likeHistory) if (e.likedAt >= since) ids.add(e.placeId);
+    return ids;
+  };
+  const [hiddenFavorites, setHiddenFavorites] = useState<ReadonlySet<string>>(favoriteIdsNow);
+  const [deckSource, setDeckSource] = useState(search.stores);
+  if (search.stores !== deckSource) {
+    setDeckSource(search.stores);
+    setHiddenFavorites(favoriteIdsNow());
+  }
+
+  // 条件(距離・予算)や探す場所が変わったら、スワイプ済みの店を除いて山を作り直す。
+  const placeKey = searchCoords ? `${searchCoords.lat},${searchCoords.lng}` : "";
+  const conditionKey = `${radiusM}:${maxPriceTier}:${placeKey}`;
+  const [appliedKey, setAppliedKey] = useState(conditionKey);
+  if (conditionKey !== appliedKey) {
+    // 距離が変わると探し直しの読み込み画面になるので、条件シートは閉じておく。
+    if (conditionKey.split(":")[0] !== appliedKey.split(":")[0]) setConditionsOpen(false);
+    setAppliedKey(conditionKey);
+    setExcluded(swiped);
+    setHiddenFavorites(favoriteIdsNow());
+    setIdx(0);
+    setPhase("lap1");
+  }
+
+  // 1周目の並び: 営業中を先に(シャッフル)、まもなく開店の店をあとに。
+  // 価格が分からない店(priceTier なし)は予算に関係なく残す。
+  const lap1List = useMemo(
+    () =>
+      orderForDeck(
+        search.stores.filter(
+          (s) =>
+            !excluded.has(s.placeId) &&
+            !hiddenFavorites.has(s.placeId) &&
+            (maxPriceTier === null || s.priceTier === null || s.priceTier <= maxPriceTier),
+        ),
+      ),
+    [search.stores, excluded, hiddenFavorites, maxPriceTier],
+  );
   const currentList = phase === "lap2" ? lap2List : lap1List;
 
   // Freeze "is this a returning visitor" the first time we know it, so later
@@ -87,13 +163,7 @@ export function MeshiApp() {
     setIsReturningVisitor(onboardingSeen);
   }
 
-  // Dev mode: skip only the location-permission screen, straight to the
-  // onboarding choice. Once we know this is a returning visitor (already
-  // marked seen in an earlier session), skip that too and go straight to the app.
-  const [stage, setStage] = useState<Stage>(devMode ? "choice" : "location");
-  if (devMode && stage === "choice" && isReturningVisitor === true) {
-    setStage("app");
-  }
+  const [stage, setStage] = useState<Stage>("location");
   if (stage === "location" && locationStatus === "granted") {
     setStage(isReturningVisitor ? "app" : "choice");
   }
@@ -104,7 +174,11 @@ export function MeshiApp() {
 
   if (stage === "location") {
     return (
-      <LocationPermission status={locationStatus} onRequest={request} autoStart={isReturningVisitor} />
+      <LocationPermission
+        status={locationStatus}
+        onRequest={request}
+        autoStart={isReturningVisitor}
+      />
     );
   }
 
@@ -120,20 +194,70 @@ export function MeshiApp() {
     );
   }
 
-  if (storesStatus === "error") {
+  const openSettings = () => setTab("profile");
+  // 1段階広げて探し直す。最大(5km)なら設定画面で条件を変えてもらう。
+  const seeMore = nextRadius ? () => setRadiusOverride(nextRadius) : openSettings;
+  const seeMoreLabel = nextRadius ? "もっとお店を見てみよう" : "条件を変える";
+
+  // プロフィールタブは検索の状態に関係なく出す(距離を変えて探し直している間も編集を続けられるように)。
+  if (tab === "profile") {
     return (
-      <CenteredMessage title="読み込めませんでした" actionLabel="再試行" onAction={retryStores} />
+      <div className={FRAME_CLASS}>
+        <SettingsPanel
+          onShowTutorial={() => {
+            setTab("swipe");
+            setShowTutorial(true);
+          }}
+          onSearch={() => setTab("swipe")}
+        />
+        <BottomTabBar tab={tab} favCount={favorites.length} onChange={setTab} />
+      </div>
     );
   }
 
-  if (storesStatus !== "success") {
+  if (search.status === "error") {
+    return (
+      <CenteredMessage
+        title="読み込めませんでした"
+        actionLabel="再試行"
+        onAction={search.retry}
+        secondaryLabel="条件を変える"
+        onSecondary={openSettings}
+      />
+    );
+  }
+
+  if (search.status !== "success") {
     return <CenteredMessage title="お店を探しています…" />;
   }
 
+  // 半径1.5kmで0件なら、サーバーが3kmまで自動で広げている。それでも1件もなかった。
+  if (search.stores.length === 0) {
+    return (
+      <CenteredMessage
+        title="近くに営業中のお店が見つかりませんでした"
+        body={
+          nextRadius
+            ? "距離を広げるか、時間をおいてもう一度お試しください。"
+            : "半径5kmまで探しました。時間をおいてもう一度お試しください。"
+        }
+        actionLabel={seeMoreLabel}
+        onAction={seeMore}
+      />
+    );
+  }
+
+  // 条件に合う店が1件もない(全部スワイプ済み・予算外)なら、そのまま「以上です」へ。
+  if (phase === "lap1" && lap1List.length === 0) {
+    setPhase("done");
+  }
+
   // ST-5: 1周目を出し切ったら、1回だけパスされた店で2周目の山を作る。
-  // 山が0件なら確認を出さずそのまま「今日は以上です」。
+  // 山が0件なら確認を出さずそのまま「以上です」。
   if (phase === "lap1" && lap1List.length > 0 && idx >= lap1List.length) {
-    const pile = lap1List.filter((s) => getPassCount(s.placeId) === 1);
+    // パスしたあとに(別の回などで)いいねした店は、もう「食べたい」にあるので出さない。
+    const liked = favoriteIdsNow();
+    const pile = lap1List.filter((s) => getPassCount(s.placeId) === 1 && !liked.has(s.placeId));
     setLap2List(pile);
     setIdx(0);
     setPhase(pile.length === 0 ? "done" : "confirm");
@@ -143,13 +267,19 @@ export function MeshiApp() {
     setPhase("done");
   }
 
-  function handlePass(placeId: string) {
-    recordPass(placeId);
+  function markSwiped(placeId: string) {
+    setSwiped((prev) => new Set(prev).add(placeId));
   }
 
+  function handlePass(placeId: string) {
+    recordPass(placeId);
+    markSwiped(placeId);
+  }
+
+  // 右スワイプは「食べたい」(いいね履歴)に入るだけ。「自分」へは見比べてから自分で入れる。
   function handleLike(placeId: string) {
-    addFavorite(placeId);
     recordLike(placeId);
+    markSwiped(placeId);
   }
 
   function handleAddMany(placeIds: string[]) {
@@ -161,15 +291,22 @@ export function MeshiApp() {
       {tab === "fav" ? (
         <FavListTab
           favorites={favorites}
-          stores={stores}
+          stores={search.stores}
+          coords={searchCoords}
           likeHistory={likeHistory}
           onRemove={removeFavorite}
           onToggleFavorite={toggleFavorite}
           onAddMany={handleAddMany}
+          onOpenSettings={openSettings}
         />
       ) : (
         <>
-          <Header locationStatus={devMode ? "granted" : locationStatus} storeCount={stores.length} />
+          <Header
+            locationStatus={locationStatus}
+            radiusM={searchedRadius}
+            maxPriceTier={maxPriceTier}
+            onOpenConditions={() => setConditionsOpen(true)}
+          />
 
           {phase === "confirm" ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
@@ -196,15 +333,28 @@ export function MeshiApp() {
             </div>
           ) : phase === "done" ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-              <h2 className="text-lg font-bold text-text-primary">今日は以上です</h2>
-              <p className="text-sm text-text-secondary">また明日、新しい気持ちで見返せます。</p>
-              <button
-                type="button"
-                onClick={() => setTab("fav")}
-                className="mt-4 h-12 rounded-full bg-accent px-6 text-sm font-bold text-text-primary"
-              >
-                食べたいリストを見る
-              </button>
+              <h2 className="text-lg font-bold text-text-primary">条件に合う近くの店は以上です</h2>
+              <p className="text-sm text-text-secondary">
+                {nextRadius
+                  ? `半径${nextRadius / 1000}kmまで広げて、ほかのお店も見てみよう`
+                  : "半径5kmまで探しました。予算などの条件を変えると、ほかのお店も見つかるかもしれません"}
+              </p>
+              <div className="mt-4 flex w-full max-w-[260px] flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={seeMore}
+                  className="h-12 rounded-full bg-accent text-sm font-bold text-text-primary"
+                >
+                  {seeMoreLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab("fav")}
+                  className="h-12 rounded-full border border-card-border text-sm font-bold text-text-primary"
+                >
+                  食べたいリストを見る
+                </button>
+              </div>
             </div>
           ) : (
             <SwipeTab
@@ -221,6 +371,10 @@ export function MeshiApp() {
 
       <BottomTabBar tab={tab} favCount={favorites.length} onChange={setTab} />
 
+      {conditionsOpen && tab === "swipe" && (
+        <ConditionsSheet radiusValue={searchedRadius} onClose={() => setConditionsOpen(false)} />
+      )}
+
       {showTutorial && (
         <TutorialOverlay
           containerRef={frameRef}
@@ -228,7 +382,9 @@ export function MeshiApp() {
             setShowTutorial(false);
             // オーバーレイを閉じるとフォーカスが失われる(要素ごと消えるため)ので、
             // キーボード操作を続けられるようカードにフォーカスを戻す(8.2)。
-            frameRef.current?.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
+            frameRef.current
+              ?.querySelector<HTMLElement>('[tabindex="0"]')
+              ?.focus({ preventScroll: true });
           }}
         />
       )}

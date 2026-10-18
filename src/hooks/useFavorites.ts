@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import { isMockStores } from "@/lib/meshi/dev-mode";
+import { isMockPlaceId } from "@/lib/meshi/derived";
 
 export interface FavoriteEntry {
   placeId: string;
@@ -29,7 +31,12 @@ function parse(raw: string | null): FavoriteEntry[] {
   if (!raw) return EMPTY;
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? sortByAddedAtDesc(parsed.filter(isFavoriteEntry)) : EMPTY;
+    if (!Array.isArray(parsed)) return EMPTY;
+    // Drop leftovers from the mock-store era when real stores are in use.
+    const keepMock = isMockStores();
+    return sortByAddedAtDesc(
+      parsed.filter(isFavoriteEntry).filter((f) => keepMock || !isMockPlaceId(f.placeId)),
+    );
   } catch {
     return EMPTY;
   }

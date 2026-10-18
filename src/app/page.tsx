@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { MeshiApp } from "@/components/meshi/MeshiApp";
 import { createClient } from "@/lib/supabase/server";
-import { isDevMode } from "@/lib/meshi/dev-mode";
+import { isAuthBypassed } from "@/lib/meshi/dev-mode";
 
 export default async function Home() {
-  if (!isDevMode()) {
+  if (!isAuthBypassed()) {
     const supabase = await createClient();
     const {
       data: { user },

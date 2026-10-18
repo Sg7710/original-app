@@ -14,10 +14,11 @@ interface FavListHeaderProps {
   onOpenMenu: () => void;
 }
 
+// 食べたい = 右スワイプした店(見比べる場所)、自分 = 行くと決めた店。
 const SEGMENTS: { key: FavView; label: string }[] = [
+  { key: "history", label: "食べたい" },
   { key: "mine", label: "自分" },
   { key: "others", label: "みんな" },
-  { key: "history", label: "いいね履歴" },
 ];
 
 export function FavListHeader({
@@ -58,7 +59,9 @@ export function FavListHeader({
               type="button"
               onClick={() => onChangeView(segment.key)}
               className={`flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[18px] text-[13px] font-bold transition-colors ${
-                active ? "bg-white text-text-primary shadow-card" : "text-[#8A8474]"
+                active
+                  ? "bg-white text-text-primary shadow-[0_2px_8px_rgba(26,24,19,0.08)]"
+                  : "text-[#8A8474]"
               }`}
             >
               <span>{segment.label}</span>
