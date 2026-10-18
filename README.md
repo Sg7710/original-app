@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 直観メシ
 
-## Getting Started
+現在地のまわりで「今から行ける」飲食店を、写真のカードをスワイプするだけで選べるWebアプリです。
 
-First, run the development server:
+公開URL: https://sg-ebon-seven.vercel.app
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## なぜ作ったか
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+目当ての店に行ったら閉まっていて、限られた時間の中で代わりの店を探し直したことがあります。そのとき必要だったのは詳しい情報ではなく、「今から歩いて行ける、今開いている店」を一軒決めることだけでした。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+それなのに、食べログのような既存のサービスで調べるほど、評価点や口コミといった文字の情報が増えて、かえって決められなくなりました。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+調べる時間をかけずに直観で一軒決められるものが欲しくて、このアプリを作りました。
 
-## Learn More
+## 設計の方針
 
-To learn more about Next.js, take a look at the following resources:
+このアプリは「調べる」ためではなく「決める」ためのものです。そのため次の4つを決めました。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**評価点と口コミを出さない**
+星の数が表示された瞬間、人は写真ではなく数字で判断を始めます。取得できるデータですが、意図的に表示していません。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**写真がない店は出さない**
+写真で直観的に判断してもらうアプリなので、写真のない店はカードとして成立しません。
 
-## Deploy on Vercel
+**閉まっている店は出さない**
+営業時間外、定休日、臨時休業、閉業した店は除外しています。表示するのは今営業中の店と、1時間以内に開く店（開店時刻のバッジ付き）だけです。「行ったら閉まっていた」を防ぐための中心的な仕様です。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+**詳しいことはGoogleマップに任せる**
+アプリの中に詳細画面を持っていません。行くと決めたあとの経路案内は、リンクでGoogleマップに引き渡します。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 主な機能
+
+- 現在地のまわりにある、今行ける飲食店をカードで表示
+- 右スワイプで「食べたい」、左スワイプでパス
+- 価格帯をカードの枠の色で表示（視線を動かさずに分かる）
+- 所要時間はGoogle Routes APIが返す経路に沿った時間を表示
+- 移動手段を徒歩・自転車・車から選択可能
+- その日パスした店が、一周したあとに一度だけ再登場
+- 食べたいリストから、Googleマップの経路案内と店舗の公式サイトへ
+- キーボードの左右キーでもスワイプ操作が可能
+- スクリーンリーダー対応、アニメーション軽減設定への対応
+- ログイン（メール＋パスワード、Googleアカウント）
+
+## 画面
+
+（ここにスクリーンショットを入れる）
+
+## 技術構成
+
+- フロントエンド: Next.js 16 / React 19 / TypeScript / Tailwind CSS v4
+- 認証: Supabase Auth（メール＋パスワード、Google）
+- データベース: Supabase（公式サイトが未登録の店のIDを記録する用途）
+- 外部API: Google Places API (New)、Google Routes API
+- ホスティング: Vercel
+
+食べたいリストとパス履歴は、ブラウザのlocalStorageに保存しています。
+
+## 工夫したところ
+
+**外部APIの規約に合わせてデータの持ち方を変えた**
+
+取得した店舗情報を保存して使い回す設計を考えていましたが、Google Places APIは取得したコンテンツの保存を原則として認めておらず、保存してよいのは店舗のID（place_id）だけだと分かりました。そこで保存するのはIDだけにして、表示のたびに必要な項目だけを取り直す構成にしています。
+
+**精度と費用のあいだで設計を往復させた**
+
+所要時間は、はじめGoogle Routes APIで経路に沿った時間を出していました。ところが検索1回あたりの費用を調べると、その約4分の3がRoutes APIによるものでした。そこで一度、直線距離からの概算に切り替えて費用を下げました。
+
+しかし概算は建物や川を無視した値なので、「徒歩4分」という表示が実態と合いません。判断材料が不正確ではアプリの前提が崩れると考え、最終的にRoutes APIへ戻しました。
+
+費用は、複数の店までの所要時間を一度の呼び出しでまとめて取得すること、Routesの結果が得られなかった店だけ概算にフォールバックすることで抑えています。精度と費用は一度の判断では決まらず、実際に使いながら往復して決めたところです。
+
+**API費用を抑える仕組みを入れた**
+
+写真は最初に全件まとめて取得せず、必要になった時点で取りに行く形にしました。検索結果は30分以内・200m以内なら再利用します。
+
+**待ち時間の表示をやめた**
+
+当初は「約45分待ち」のような表示を考えていましたが、行列の状況を取得する手段が公開されていませんでした。推測値を出すことはできますが、不正確な数字を事実のように見せることになるため、機能ごと外しました。表示する数値はすべて実データに基づく、という方針をアプリ全体に適用しています。
+
+## 今後
+
+- 飲食店側が自分の店の写真を登録できる仕組み
+- 友人同士で「食べたい」リストを共有し、候補が重なった店を提示する機能
+
+## 制作
+
+個人開発（2026年9月〜）
