@@ -27,11 +27,19 @@ interface StoreCardProps {
   showTravelTime?: boolean;
 }
 
-const SWIPE_THRESHOLD = 88; // px
-const VELOCITY_THRESHOLD = 0.5; // px/ms — a fast short flick commits even under the distance threshold
-const FLY_DISTANCE = 520;
-const SETTLE_MS = 260;
-const HISTORY_SIZE = 3; // velocity is averaged over the last N move samples, not just the last 2 (jitter-prone)
+/** これだけ横に動かしたら確定(カード幅の28%、ただし最大110px)。 */
+const SWIPE_THRESHOLD_MAX = 110; // px
+const SWIPE_THRESHOLD_RATIO = 0.28;
+const VELOCITY_THRESHOLD = 0.45; // px/ms — a fast short flick commits even under the distance threshold
+const HISTORY_SIZE = 6; // velocity is averaged over the last N move samples, not just the last 2 (jitter-prone)
+/** 離す直前のこの時間の動きだけで「はじいたか」を決める。 */
+const VELOCITY_WINDOW_MS = 100;
+/** 横に1px動かすごとに何度回すか(つかんだのが上半分なら+、下半分なら-)。 */
+const ROTATE_PER_PX = 0.075;
+const MAX_ROTATE = 22; // deg
+/** 画面の外へ飛んでいく時間と、確定しなかったときにバネで戻る時間。 */
+const FLY_MS = 320;
+const SNAP_BACK_MS = 480;
 const TAP_SLOP = 8; // px — a press that moves less than this is a tap (flip photo), not a drag
 /** 写真は1枚ごとにGoogleの料金がかかるので、めくれるのは5枚まで・めくったときに1枚ずつ取る。 */
 export const MAX_PHOTOS = 5;
@@ -86,14 +94,16 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
   { store, position, isRelapse = false, onCommit, onAdvance, showTravelTime = true },
   ref,
 ) {
-  const [dx, setDx] = useState(0);
-  const [dy, setDy] = useState(0);
-  const [dragging, setDragging] = useState(false);
   const [flying, setFlying] = useState<"like" | "pass" | null>(null);
-  const startRef = useRef<{ x: number; y: number } | null>(null);
-  const dxRef = useRef(0);
-  const historyRef = useRef<{ x: number; t: number }[]>([]);
+  // ドラッグ中の位置は React の状態に入れず、カードの見た目を直接動かす(指に遅れず付いてくるように)。
+  // grab = つかんだのがカードの上半分なら 1、下半分なら -1(回る向きが変わる)。
+  const startRef = useRef<{ x: number; y: number; grab: 1 | -1 } | null>(null);
+  const posRef = useRef({ dx: 0, dy: 0 });
+  const historyRef = useRef<{ x: number; y: number; t: number }[]>([]);
+  const frameRef = useRef<number | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const likeStampRef = useRef<HTMLDivElement>(null);
+  const passStampRef = useRef<HTMLDivElement>(null);
   const photoAreaRef = useRef<HTMLDivElement>(null);
 
   const photos = store.photos.slice(0, MAX_PHOTOS);
@@ -134,55 +144,124 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
     if (isTop) cardRef.current?.focus({ preventScroll: true });
   }, [isTop]);
 
-  function commit(direction: "like" | "pass") {
-    if (flying) return;
-    setDragging(false);
-    setFlying(direction);
-    setDx(direction === "like" ? FLY_DISTANCE : -FLY_DISTANCE);
-    onCommit?.(direction);
-    // prefers-reduced-motion: 見た目のtransitionはCSS側で即時化されるが、
-    // 次のカードへの切り替え自体も待たせず即座に行う(8.2)。
-    const reduceMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    window.setTimeout(
-      () => {
-        onAdvance?.();
-      },
-      reduceMotion ? 0 : SETTLE_MS,
+  function reduceMotion(): boolean {
+    return (
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
     );
   }
 
-  useImperativeHandle(ref, () => ({ commit }));
+  function threshold(): number {
+    const width = cardRef.current?.offsetWidth ?? 340;
+    return Math.min(SWIPE_THRESHOLD_MAX, width * SWIPE_THRESHOLD_RATIO);
+  }
+
+  function rotationFor(dx: number): number {
+    const grab = startRef.current?.grab ?? 1;
+    return Math.max(-MAX_ROTATE, Math.min(MAX_ROTATE, dx * ROTATE_PER_PX * grab));
+  }
+
+  /** カードを (dx, dy) に動かし、スタンプの濃さと、後ろのカードがせり出す量もそろえる。 */
+  function paint(dx: number, dy: number, rotate: number) {
+    const el = cardRef.current;
+    if (!el) return;
+    el.style.transform = `translate3d(${dx}px, ${dy}px, 0) rotate(${rotate}deg)`;
+    const t = threshold();
+    if (likeStampRef.current)
+      likeStampRef.current.style.opacity = String(Math.min(Math.max(dx / t, 0), 1));
+    if (passStampRef.current)
+      passStampRef.current.style.opacity = String(Math.min(Math.max(-dx / t, 0), 1));
+    // 後ろのカードは CSS 変数 --swipe(0〜1)で少しずつ大きく・手前に出てくる
+    el.parentElement?.style.setProperty("--swipe", String(Math.min(Math.abs(dx) / t, 1)));
+  }
+
+  function commit(direction: "like" | "pass", velocity?: { x: number; y: number }) {
+    if (flying) return;
+    const el = cardRef.current;
+    setFlying(direction);
+    onCommit?.(direction);
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(8);
+
+    // 投げた向きのまま画面の外へ。勢いがあればその傾き、なければ指を動かした傾きで飛ばす。
+    const { dx, dy } = posRef.current;
+    const sign = direction === "like" ? 1 : -1;
+    const targetX = sign * (window.innerWidth + (el?.offsetWidth ?? 400));
+    const slope =
+      velocity && Math.abs(velocity.x) > 0.1 ? velocity.y / velocity.x : dx !== 0 ? dy / dx : -0.12;
+    const targetY = dy + (targetX - dx) * Math.max(-0.9, Math.min(0.9, slope));
+    const instant = reduceMotion();
+    if (el)
+      el.style.transition = instant ? "none" : `transform ${FLY_MS}ms cubic-bezier(.2,.75,.35,1)`;
+    paint(targetX, targetY, sign * MAX_ROTATE * (startRef.current?.grab ?? 1));
+    startRef.current = null;
+    // prefers-reduced-motion: 見た目の動きもなくし、次のカードへの切り替えも待たせない(8.2)。
+    window.setTimeout(
+      () => {
+        onAdvance?.();
+        // 次のカードが一番上になってから、後ろのカードのせり出しを元に戻す
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => el?.parentElement?.style.setProperty("--swipe", "0")),
+        );
+      },
+      instant ? 0 : FLY_MS - 40,
+    );
+  }
+
+  useImperativeHandle(ref, () => ({ commit: (direction) => commit(direction) }));
+
+  function snapBack() {
+    const el = cardRef.current;
+    posRef.current = { dx: 0, dy: 0 };
+    if (el) {
+      el.style.transition = reduceMotion()
+        ? "none"
+        : `transform ${SNAP_BACK_MS}ms cubic-bezier(.175,.885,.32,1.275)`;
+    }
+    paint(0, 0, 0);
+  }
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (!isTop || flying) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    startRef.current = { x: e.clientX, y: e.clientY };
-    historyRef.current = [{ x: e.clientX, t: e.timeStamp }];
-    setDragging(true);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 指を追いかけられなくても、ドラッグ自体は続けられる
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    startRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      grab: e.clientY - rect.top < rect.height / 2 ? 1 : -1,
+    };
+    posRef.current = { dx: 0, dy: 0 };
+    historyRef.current = [{ x: e.clientX, y: e.clientY, t: e.timeStamp }];
+    e.currentTarget.style.transition = "none";
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!isTop || !startRef.current || flying) return;
-    const nextDx = e.clientX - startRef.current.x;
-    const nextDy = (e.clientY - startRef.current.y) * 0.4;
-    dxRef.current = nextDx;
-    setDx(nextDx);
-    setDy(nextDy);
-
+    // 縦も横も指と同じだけ動かす(1対1)
+    posRef.current = { dx: e.clientX - startRef.current.x, dy: e.clientY - startRef.current.y };
     const history = historyRef.current;
-    history.push({ x: e.clientX, t: e.timeStamp });
+    history.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
     if (history.length > HISTORY_SIZE) history.shift();
+    // 画面の書き換え1回分に1回だけ動かす(動きが多くても重くならない)
+    if (frameRef.current === null) {
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = null;
+        const { dx, dy } = posRef.current;
+        paint(dx, dy, rotationFor(dx));
+      });
+    }
   }
 
-  function releaseVelocity(): number {
-    const history = historyRef.current;
-    if (history.length < 2) return 0;
-    const first = history[0];
-    const last = history[history.length - 1];
-    const dt = last.t - first.t;
-    return dt > 0 ? (last.x - first.x) / dt : 0;
+  /** 離す直前(VELOCITY_WINDOW_MS)の動きだけで勢いを測る。止めてから離したら勢いは0。 */
+  function releaseVelocity(releaseAt: number): { x: number; y: number } {
+    const recent = historyRef.current.filter((h) => releaseAt - h.t <= VELOCITY_WINDOW_MS);
+    if (recent.length < 2) return { x: 0, y: 0 };
+    const first = recent[0];
+    const last = recent[recent.length - 1];
+    const dt = Math.max(last.t - first.t, 1);
+    return { x: (last.x - first.x) / dt, y: (last.y - first.y) / dt };
   }
 
   function flipPhoto(step: 1 | -1) {
@@ -198,23 +277,27 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
 
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
     if (!isTop || !startRef.current || flying) return;
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
     const start = startRef.current;
-    startRef.current = null;
     if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < TAP_SLOP) {
-      setDragging(false);
-      setDx(0);
-      setDy(0);
+      startRef.current = null;
+      snapBack();
       if (e.type === "pointerup") handleTap(e.clientX, e.clientY);
       return;
     }
-    const passedDistance = Math.abs(dxRef.current) > SWIPE_THRESHOLD;
-    const passedVelocity = Math.abs(releaseVelocity()) > VELOCITY_THRESHOLD;
-    if (passedDistance || passedVelocity) {
-      commit(dxRef.current > 0 ? "like" : "pass");
+    const { dx } = posRef.current;
+    const v = releaseVelocity(e.timeStamp);
+    const passedDistance = Math.abs(dx) > threshold();
+    // 素早くはじいたら、距離が短くても確定(はじいた向きと動かした向きが同じときだけ)
+    const flicked = Math.abs(v.x) > VELOCITY_THRESHOLD && Math.sign(v.x) === Math.sign(dx || v.x);
+    if (passedDistance || flicked) {
+      commit((flicked ? v.x : dx) > 0 ? "like" : "pass", v);
     } else {
-      setDragging(false);
-      setDx(0);
-      setDy(0);
+      startRef.current = null;
+      snapBack();
     }
   }
 
@@ -235,12 +318,12 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
     }
   }
 
-  const transform = isTop
-    ? `translate(${dx}px, ${dy}px) rotate(${dx / 24}deg)`
-    : `translateY(${14 * position}px) scale(${1 - 0.04 * position})`;
-
-  const likeOpacity = isTop ? Math.min(Math.max(dx / 100, 0), 1) : 0;
-  const passOpacity = isTop ? Math.min(Math.max(-dx / 100, 0), 1) : 0;
+  // 一番上のカードの位置は paint() が直接動かすので、ここでは決めない。
+  // すぐ後ろのカードは、上のカードをドラッグするほど(--swipe)大きく・手前に出てくる。
+  const backTransform =
+    position === 1
+      ? "translateY(calc(14px * (1 - var(--swipe, 0)))) scale(calc(0.96 + 0.04 * var(--swipe, 0)))"
+      : `translateY(${14 * position}px) scale(${1 - 0.04 * position})`;
 
   const frame = store.priceTier ? PRICE_TIER_COLORS[store.priceTier] : PRICE_UNKNOWN_FRAME;
 
@@ -251,9 +334,9 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
       style={{
         backgroundColor: frame.bg,
         padding: `0 ${FRAME_PX}px ${FRAME_PX}px`,
-        transform,
-        transformOrigin: "50% 100%",
-        transition: isTop && !dragging ? "transform .26s cubic-bezier(.22,.68,.36,1)" : "none",
+        ...(isTop
+          ? { touchAction: "none", willChange: "transform" }
+          : { transform: backTransform, transition: "transform .2s ease-out" }),
         opacity: position === 2 ? 0.6 : 1,
         zIndex: 10 - position,
       }}
@@ -371,14 +454,16 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
           {isTop && (
             <>
               <div
-                className="pointer-events-none absolute right-6 top-6 rounded-lg border-4 border-accent px-3 py-1 text-lg font-black text-accent"
-                style={{ opacity: likeOpacity, transform: "rotate(-12deg)" }}
+                ref={likeStampRef}
+                className="pointer-events-none absolute right-6 top-6 rounded-lg border-4 border-accent px-3 py-1 text-lg font-black text-accent opacity-0"
+                style={{ transform: "rotate(-12deg)" }}
               >
                 👍 食べたい
               </div>
               <div
-                className="pointer-events-none absolute left-6 top-6 rounded-lg border-4 border-text-secondary px-3 py-1 text-lg font-black text-text-secondary"
-                style={{ opacity: passOpacity, transform: "rotate(12deg)" }}
+                ref={passStampRef}
+                className="pointer-events-none absolute left-6 top-6 rounded-lg border-4 border-text-secondary px-3 py-1 text-lg font-black text-text-secondary opacity-0"
+                style={{ transform: "rotate(12deg)" }}
               >
                 ❌ パス
               </div>

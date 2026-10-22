@@ -63,7 +63,8 @@ export function SwipeTab({
   return (
     <div className="flex flex-1 flex-col px-5 pt-4">
       {liveRegion}
-      <div className="relative flex-1 overflow-hidden">
+      {/* カードを投げたとき、この枠の外まで切れずに飛んでいけるよう overflow は見せる */}
+      <div className="relative flex-1">
         {stack.map((store, i) => (
           <StoreCard
             key={store.placeId}
