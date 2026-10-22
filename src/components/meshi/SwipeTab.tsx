@@ -11,9 +11,19 @@ interface SwipeTabProps {
   onAdvance: () => void;
   onLike: (placeId: string) => void;
   onPass: (placeId: string) => void;
+  /** false: カードに時間の代わりに営業状況を出す(投票ページ用) */
+  showTravelTime?: boolean;
 }
 
-export function SwipeTab({ stores, idx, isRelapse = false, onAdvance, onLike, onPass }: SwipeTabProps) {
+export function SwipeTab({
+  stores,
+  idx,
+  isRelapse = false,
+  onAdvance,
+  onLike,
+  onPass,
+  showTravelTime = true,
+}: SwipeTabProps) {
   const topRef = useRef<StoreCardHandle>(null);
   const [announcement, setAnnouncement] = useState("");
   const stack = useMemo(() => stores.slice(idx, idx + 3), [stores, idx]);
@@ -63,6 +73,7 @@ export function SwipeTab({ stores, idx, isRelapse = false, onAdvance, onLike, on
             isRelapse={isRelapse}
             onCommit={handleCommit}
             onAdvance={onAdvance}
+            showTravelTime={showTravelTime}
           />
         ))}
       </div>

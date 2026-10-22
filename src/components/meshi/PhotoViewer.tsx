@@ -48,7 +48,7 @@ export function PhotoViewer({ store, onClose }: PhotoViewerProps) {
       className="fixed inset-0 z-50 flex justify-center bg-black"
     >
       <div className="flex h-full w-full max-w-[402px] flex-col">
-        <div className="flex shrink-0 flex-col gap-2 px-4 pb-2 pt-3">
+        <div className="flex shrink-0 flex-col gap-2 px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <div className="flex items-center justify-between">
             <button
               ref={closeRef}
@@ -126,7 +126,7 @@ export function PhotoViewer({ store, onClose }: PhotoViewerProps) {
           )}
         </div>
 
-        <div className="shrink-0 px-4 pb-8 pt-3">
+        <div className="shrink-0 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-3">
           <p className="text-base font-bold leading-snug text-white">{store.name}</p>
           <p className="mt-1 text-[11px] text-white/60">写真: {photos[shown].attribution}</p>
         </div>

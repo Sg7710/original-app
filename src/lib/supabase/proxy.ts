@@ -14,9 +14,7 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
@@ -47,7 +45,9 @@ export async function updateSession(request: NextRequest) {
   return supabaseResponse;
 }
 
-const PUBLIC_PATHS = ["/login", "/signup", "/reset-password", "/auth"];
+// /poll は投票ページ。友達はログインなしで開く(読めるのは get_poll で、その投票1件だけ)。
+// /api/polls はその候補のお店を返すAPI(投票IDで決まる最大6軒だけ)。
+const PUBLIC_PATHS = ["/login", "/signup", "/reset-password", "/auth", "/poll", "/api/polls"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

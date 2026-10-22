@@ -2,23 +2,21 @@
 
 import { Avatar } from "./Avatar";
 
-export type FavView = "mine" | "others" | "history";
+export type FavView = "mine" | "history";
 
 interface FavListHeaderProps {
   view: FavView;
   onChangeView: (view: FavView) => void;
   userName: string;
   mineCount: number;
-  othersCount: number;
   historyCount: number;
   onOpenMenu: () => void;
 }
 
-// 食べたい = 右スワイプした店(見比べる場所)、自分 = 行くと決めた店。
+// 食べたい = 右スワイプした店(見比べる場所)、リスト = 行くと決めた店。
 const SEGMENTS: { key: FavView; label: string }[] = [
   { key: "history", label: "食べたい" },
-  { key: "mine", label: "自分" },
-  { key: "others", label: "みんな" },
+  { key: "mine", label: "リスト" },
 ];
 
 export function FavListHeader({
@@ -26,13 +24,11 @@ export function FavListHeader({
   onChangeView,
   userName,
   mineCount,
-  othersCount,
   historyCount,
   onOpenMenu,
 }: FavListHeaderProps) {
   const counts: Record<FavView, number> = {
     mine: mineCount,
-    others: othersCount,
     history: historyCount,
   };
 

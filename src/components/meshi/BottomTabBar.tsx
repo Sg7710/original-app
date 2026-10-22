@@ -16,7 +16,7 @@ const TABS: { key: Tab; icon: string; label: string }[] = [
 
 export function BottomTabBar({ tab, favCount, onChange }: BottomTabBarProps) {
   return (
-    <div className="flex shrink-0 gap-2 border-t border-card-border bg-white px-5 pb-[30px] pt-2.5">
+    <div className="flex shrink-0 gap-2 border-t border-card-border bg-white px-5 pb-3 pt-2.5 sm:pb-[30px]">
       {TABS.map((t) => {
         const active = tab === t.key;
         return (

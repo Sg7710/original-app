@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Store } from "@/types/store";
 import type { LikeEntry } from "@/types/social";
 import type { FavoriteEntry } from "@/hooks/useFavorites";
@@ -8,17 +8,18 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useStoreLookup } from "@/hooks/useStoreLookup";
 import { LIKE_HISTORY_DAYS } from "@/hooks/useLikeHistory";
 import type { Coords } from "@/hooks/useLocation";
-import { MOCK_PEOPLE } from "@/lib/meshi/mock-people";
 import { FavListHeader, type FavView } from "./FavListHeader";
 import { FavListMineView } from "./FavListMineView";
-import { FavListEveryoneView } from "./FavListEveryoneView";
 import { FavListHistoryView, type HistoryEntry } from "./FavListHistoryView";
+import { dayLabel, TODAY } from "./DayHeader";
 import { ProfilePopup } from "./ProfilePopup";
 
 const HISTORY_LIMIT = 30;
 
 interface FavListTabProps {
   favorites: FavoriteEntry[];
+  /** false の間は「自分」のリストを Supabase から読み込み中 */
+  favoritesLoaded: boolean;
   stores: Store[];
   coords: Coords | null;
   likeHistory: LikeEntry[];
@@ -30,6 +31,7 @@ interface FavListTabProps {
 
 export function FavListTab({
   favorites,
+  favoritesLoaded,
   stores,
   coords,
   likeHistory,
@@ -45,29 +47,62 @@ export function FavListTab({
   const searchedIds = useMemo(() => new Set(stores.map((s) => s.placeId)), [stores]);
 
   // 今回の検索に入っていない「食べたい」店は、店のIDで取り直す(徒歩時間つき)。
+  const [openedAt] = useState(() => Date.now());
+  // 「自分」タブはスワイプした日ごとに分ける(同じ店を何度もスワイプしていたら一番最近)。
+  // いいね履歴は表示が7日分なだけで記録は残っているので、古い店の日付も分かる。
+  // 履歴にない店(ほかの端末でスワイプした等)だけ、リストに入れた日で分ける。
+  const swipedAt = useMemo(() => {
+    const latest = new Map<string, number>();
+    for (const e of likeHistory) {
+      if ((latest.get(e.placeId) ?? -Infinity) < e.likedAt) latest.set(e.placeId, e.likedAt);
+    }
+    return latest;
+  }, [likeHistory]);
+  const [mineOpenDays, setMineOpenDays] = useState<ReadonlySet<string>>(() => new Set([TODAY]));
+  const openMineDay = useCallback(
+    (label: string) =>
+      setMineOpenDays((prev) => (prev.has(label) ? prev : new Set(prev).add(label))),
+    [],
+  );
+  // 取り直すのは「リスト」タブを開いていて、しかも開いている日付の店だけ(最初は「今日」だけ)。
   const mineLookup = useStoreLookup(
-    favorites.map((f) => f.placeId).filter((id) => !searchedIds.has(id)),
+    favorites
+      .filter((f) =>
+        mineOpenDays.has(
+          dayLabel(new Date(swipedAt.get(f.placeId) ?? f.addedAt), new Date(openedAt)),
+        ),
+      )
+      .map((f) => f.placeId)
+      .filter((id) => !searchedIds.has(id)),
     coords,
-    true,
+    view === "mine",
   );
 
   // いいね履歴は直近7日・最大30件だけを表示し、取り直すのはタブを開いたときだけ。
-  const [openedAt] = useState(() => Date.now());
   // 同じ店は1行にまとめ、一番新しいいいねの時間と回数を出す(履歴は新しい順に並んでいる)。
+  // 「自分」のリストに入れた店は「食べたい」から外す。「はずす」で「自分」から外せば、
+  // いいねの記録は残っているので、スワイプした日のところに自動で戻る。
   const recentHistory = useMemo(() => {
     const since = openedAt - LIKE_HISTORY_DAYS * 86_400_000;
+    const listed = new Set(favorites.map((f) => f.placeId));
     const byPlace = new Map<string, HistoryEntry>();
     for (const e of likeHistory) {
-      if (e.likedAt < since) continue;
+      if (e.likedAt < since || listed.has(e.placeId)) continue;
       const seen = byPlace.get(e.placeId);
       if (seen) seen.count += 1;
       else byPlace.set(e.placeId, { ...e, count: 1 });
     }
     return Array.from(byPlace.values()).slice(0, HISTORY_LIMIT);
-  }, [likeHistory, openedAt]);
+  }, [likeHistory, favorites, openedAt]);
   // 見比べるために徒歩時間も出すので、現在地つきで取り直す。
+  // 取り直すのは開いている日付の店だけ(最初は「今日」だけ)。閉じた日の分まで毎回取ると
+  // Place Details の無料枠をすぐ使い切るため。
+  const [openDays, setOpenDays] = useState<ReadonlySet<string>>(() => new Set([TODAY]));
   const historyLookup = useStoreLookup(
-    recentHistory.map((e) => e.placeId).filter((id) => !searchedIds.has(id)),
+    recentHistory
+      .filter((e) => openDays.has(dayLabel(new Date(e.likedAt), new Date(openedAt))))
+      .map((e) => e.placeId)
+      .filter((id) => !searchedIds.has(id)),
     coords,
     view === "history",
   );
@@ -78,14 +113,6 @@ export function FavListTab({
   );
 
   const myFavoritePlaceIds = useMemo(() => new Set(favorites.map((f) => f.placeId)), [favorites]);
-
-  const othersCount = useMemo(() => {
-    const ids = new Set<string>();
-    for (const person of MOCK_PEOPLE) {
-      for (const id of person.wantIds) ids.add(id);
-    }
-    return ids.size;
-  }, []);
 
   function changeView(next: FavView) {
     setView(next);
@@ -98,7 +125,6 @@ export function FavListTab({
         onChangeView={changeView}
         userName={user.name}
         mineCount={favorites.length}
-        othersCount={othersCount}
         historyCount={recentHistory.length}
         onOpenMenu={() => setMenuOpen(true)}
       />
@@ -106,18 +132,20 @@ export function FavListTab({
       {view === "mine" && (
         <FavListMineView
           favorites={favorites}
+          swipedAt={swipedAt}
           stores={knownStores}
-          loading={mineLookup.loading}
-          people={MOCK_PEOPLE}
+          loading={mineLookup.loading || !favoritesLoaded}
+          openDays={mineOpenDays}
+          onOpenDay={openMineDay}
+          onToggleDay={(label) =>
+            setMineOpenDays((prev) => {
+              const next = new Set(prev);
+              if (next.has(label)) next.delete(label);
+              else next.add(label);
+              return next;
+            })
+          }
           onRemove={onRemove}
-        />
-      )}
-      {view === "others" && (
-        <FavListEveryoneView
-          stores={stores}
-          people={MOCK_PEOPLE}
-          myFavoritePlaceIds={myFavoritePlaceIds}
-          onToggleMine={onToggleFavorite}
         />
       )}
       {view === "history" && (
@@ -125,6 +153,15 @@ export function FavListTab({
           history={recentHistory}
           stores={knownStores}
           loading={historyLookup.loading}
+          openDays={openDays}
+          onToggleDay={(label) =>
+            setOpenDays((prev) => {
+              const next = new Set(prev);
+              if (next.has(label)) next.delete(label);
+              else next.add(label);
+              return next;
+            })
+          }
           myFavoritePlaceIds={myFavoritePlaceIds}
           onToggleMine={onToggleFavorite}
           onBulkAdd={(placeIds) => {
@@ -139,7 +176,6 @@ export function FavListTab({
           name={user.name}
           favCount={favorites.length}
           likeCount={likeHistory.length}
-          peopleCount={MOCK_PEOPLE.length}
           onClose={() => setMenuOpen(false)}
           onOpenSettings={() => {
             setMenuOpen(false);

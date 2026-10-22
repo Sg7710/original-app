@@ -55,7 +55,7 @@ export function LoginForm({ initialError, notice }: LoginFormProps) {
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="h-12 rounded-full border border-card-border bg-white px-4 text-center text-sm text-text-primary"
+            className="h-12 rounded-full border border-card-border bg-white px-4 text-center text-base text-text-primary"
           />
           <input
             type="password"
@@ -64,7 +64,7 @@ export function LoginForm({ initialError, notice }: LoginFormProps) {
             placeholder="パスワード"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="h-12 rounded-full border border-card-border bg-white px-4 text-center text-sm text-text-primary"
+            className="h-12 rounded-full border border-card-border bg-white px-4 text-center text-base text-text-primary"
           />
           <button
             type="submit"

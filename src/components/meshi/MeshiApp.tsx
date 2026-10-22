@@ -105,7 +105,13 @@ export function MeshiApp() {
   // サーバーが1.5km→3kmに自動で広げた場合もあるので、実際に探した距離の次の段階へ。
   const searchedRadius = search.radius ?? radiusM;
   const nextRadius = RADIUS_STEPS.find((r) => r > searchedRadius) ?? null;
-  const { favorites, addFavorite, removeFavorite, toggleFavorite } = useFavorites();
+  const {
+    favorites,
+    loaded: favoritesLoaded,
+    addFavorite,
+    removeFavorite,
+    toggleFavorite,
+  } = useFavorites();
   const { history: likeHistory, recordLike } = useLikeHistory();
   const { seen: onboardingSeen, markSeen } = useOnboarding();
   const { getPassCount, recordPass } = usePassHistory();
@@ -124,6 +130,13 @@ export function MeshiApp() {
   if (search.stores !== deckSource) {
     setDeckSource(search.stores);
     setHiddenFavorites(favoriteIdsNow());
+  }
+  // 「自分」のリストを Supabase から読み終える前に山を作っていたら、まだ1枚も
+  // スワイプしていないうちに限って、読み終えたリストで作り直す。
+  const [deckSawFavorites, setDeckSawFavorites] = useState(favoritesLoaded);
+  if (favoritesLoaded && !deckSawFavorites) {
+    setDeckSawFavorites(true);
+    if (idx === 0) setHiddenFavorites(favoriteIdsNow());
   }
 
   // 条件(距離・予算)や探す場所が変わったら、スワイプ済みの店を除いて山を作り直す。
@@ -291,6 +304,7 @@ export function MeshiApp() {
       {tab === "fav" ? (
         <FavListTab
           favorites={favorites}
+          favoritesLoaded={favoritesLoaded}
           stores={search.stores}
           coords={searchCoords}
           likeHistory={likeHistory}

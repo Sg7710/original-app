@@ -8,7 +8,6 @@ interface ProfilePopupProps {
   name: string;
   favCount: number;
   likeCount: number;
-  peopleCount: number;
   onClose: () => void;
   onOpenSettings: () => void;
 }
@@ -33,9 +32,7 @@ function MenuItem({
       }`}
     >
       <span>{label}</span>
-      {trailing && (
-        <span className="font-mono text-[11px] text-text-tertiary">{trailing}</span>
-      )}
+      {trailing && <span className="font-mono text-[11px] text-text-tertiary">{trailing}</span>}
     </button>
   );
 }
@@ -44,7 +41,6 @@ export function ProfilePopup({
   name,
   favCount,
   likeCount,
-  peopleCount,
   onClose,
   onOpenSettings,
 }: ProfilePopupProps) {
@@ -78,7 +74,6 @@ export function ProfilePopup({
         </div>
         <div className="border-t border-card-border py-1.5">
           <MenuItem label="プロフィールを編集" onClick={onOpenSettings} />
-          <MenuItem label="一緒に行く人" trailing={`${peopleCount}人`} />
           <MenuItem label="設定" onClick={onOpenSettings} />
         </div>
         <div className="border-t border-card-border py-1.5">

@@ -61,7 +61,7 @@ export function SettingsPanel({ onShowTutorial, onSearch }: SettingsPanelProps) 
                   setNameDraft(e.target.value);
                   setNameStatus("idle");
                 }}
-                className="h-11 min-w-0 flex-1 rounded-full border border-card-border bg-app px-4 text-sm text-text-primary"
+                className="h-11 min-w-0 flex-1 rounded-full border border-card-border bg-app px-4 text-base text-text-primary"
               />
               <button
                 type="submit"

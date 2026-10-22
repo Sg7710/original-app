@@ -4,6 +4,14 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import type { Store } from "@/types/store";
 import { opensAtText, PRICE_TIER_COLORS, PRICE_UNKNOWN_COLOR } from "@/lib/meshi/derived";
 import { TravelTime } from "./TravelTime";
+import { openStatus, type OpenStatus } from "@/lib/meshi/open-status";
+
+const OPEN_STATUS_TEXT: Record<OpenStatus, string> = {
+  open: "営業中",
+  soon: "まもなく開店",
+  unknown: "営業時間不明",
+  closed: "営業時間外",
+};
 
 export interface StoreCardHandle {
   commit: (direction: "like" | "pass") => void;
@@ -15,6 +23,8 @@ interface StoreCardProps {
   isRelapse?: boolean;
   onCommit?: (direction: "like" | "pass") => void;
   onAdvance?: () => void;
+  /** false: 時間の代わりに営業状況を出す(投票ページなど、見る人の現在地を使わないとき) */
+  showTravelTime?: boolean;
 }
 
 const SWIPE_THRESHOLD = 88; // px
@@ -73,7 +83,7 @@ function edgeFadeMask(box: PhotoBox): string | undefined {
 }
 
 export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function StoreCard(
-  { store, position, isRelapse = false, onCommit, onAdvance },
+  { store, position, isRelapse = false, onCommit, onAdvance, showTravelTime = true },
   ref,
 ) {
   const [dx, setDx] = useState(0);
@@ -237,7 +247,7 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
   return (
     <div
       ref={cardRef}
-      className="absolute inset-0 flex touch-none flex-col overflow-hidden rounded-[24px] shadow-card"
+      className="absolute inset-0 flex touch-none select-none flex-col overflow-hidden rounded-[24px] shadow-card [-webkit-touch-callout:none]"
       style={{
         backgroundColor: frame.bg,
         padding: `0 ${FRAME_PX}px ${FRAME_PX}px`,
@@ -378,7 +388,11 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
         <div className="flex flex-col gap-1 px-5 py-4">
           <h2 className="text-[26px] font-black leading-tight text-text-primary">{store.name}</h2>
           <p className="font-mono text-sm text-text-secondary">
-            <TravelTime store={store} />
+            {showTravelTime ? (
+              <TravelTime store={store} />
+            ) : (
+              OPEN_STATUS_TEXT[openStatus(store, Date.now())]
+            )}
             {store.price ? ` / ${store.price}` : ""}
           </p>
         </div>

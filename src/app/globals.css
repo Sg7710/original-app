@@ -43,6 +43,26 @@ body {
   color: var(--text-primary);
 }
 
+/* スマホ: スワイプ中に画面全体がビヨーンと引っ張られたり、下に引いて再読み込みに
+   なったりしないようにする(一覧の中のスクロールはそのまま)。 */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+/* スマホ: 押したときの灰色の四角を出さず、ボタンのダブルタップ拡大(と待ち時間)をなくす。
+   2本指の拡大はそのまま使える。 */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+a,
+button,
+input,
+label,
+[role="button"] {
+  touch-action: manipulation;
+}
+
 /* 8.2 フォーカス表示: キーボード操作中どこにフォーカスがあるか、
    ブラウザ標準よりはっきり見えるようアクセントカラーのリングで統一する。 */
 :focus-visible {

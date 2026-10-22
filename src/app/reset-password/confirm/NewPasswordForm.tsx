@@ -51,7 +51,7 @@ export function NewPasswordForm() {
             placeholder="新しいパスワード(6文字以上)"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="h-12 rounded-full border border-card-border bg-white px-4 text-center text-sm text-text-primary"
+            className="h-12 rounded-full border border-card-border bg-white px-4 text-center text-base text-text-primary"
           />
           <input
             type="password"
@@ -61,7 +61,7 @@ export function NewPasswordForm() {
             placeholder="新しいパスワード(確認)"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="h-12 rounded-full border border-card-border bg-white px-4 text-center text-sm text-text-primary"
+            className="h-12 rounded-full border border-card-border bg-white px-4 text-center text-base text-text-primary"
           />
           <button
             type="submit"

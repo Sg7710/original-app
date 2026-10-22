@@ -6,6 +6,7 @@ import type { LikeEntry } from "@/types/social";
 import { PhotoViewer } from "./PhotoViewer";
 import { DirectionsLink, OPEN_STATUS_LOOK, StoreDetailRow } from "./StoreDetailRow";
 import { NoMatchingStores, StoreFilterBar, useStoreFilters } from "./StoreFilters";
+import { DayHeader, dayLabel, TODAY } from "./DayHeader";
 
 /** 店ごとにまとめた履歴の1行: 一番新しいいいねと、いいねした回数。 */
 export interface HistoryEntry extends LikeEntry {
@@ -17,6 +18,9 @@ interface FavListHistoryViewProps {
   stores: Store[];
   /** Liked stores outside the current search are still being re-fetched. */
   loading: boolean;
+  /** 開いている日付(見出しの文字)。ここに入っている日の店だけ取り直してある。 */
+  openDays: ReadonlySet<string>;
+  onToggleDay: (label: string) => void;
   myFavoritePlaceIds: Set<string>;
   onToggleMine: (placeId: string) => void;
   onBulkAdd: (placeIds: string[]) => void;
@@ -25,18 +29,9 @@ interface FavListHistoryViewProps {
 interface DayGroup {
   label: string;
   date: Date;
+  /** その日にいいねした店の数(まだ取り直していない店も含む) */
+  entryCount: number;
   rows: { entry: HistoryEntry; store: Store }[];
-}
-
-const TODAY = "今日";
-
-function dayLabel(date: Date, today: Date): string {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const diffDays = Math.round((t - d) / 86_400_000);
-  if (diffDays === 0) return TODAY;
-  if (diffDays === 1) return "昨日";
-  return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
 /**
@@ -47,32 +42,34 @@ export function FavListHistoryView({
   history,
   stores,
   loading,
+  openDays,
+  onToggleDay,
   myFavoritePlaceIds,
   onToggleMine,
   onBulkAdd,
 }: FavListHistoryViewProps) {
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [openDays, setOpenDays] = useState<Set<string>>(() => new Set([TODAY]));
   const [viewing, setViewing] = useState<Store | null>(null);
   const filters = useStoreFilters();
 
   // 日付ごとにまとめる(履歴は新しい順なので、日付も新しい順になる)。
+  // 閉じている日の店はまだ取り直していないので、見出しと件数だけ出す。
   const now = new Date();
   const groups: DayGroup[] = [];
   for (const entry of history) {
-    const store = stores.find((s) => s.placeId === entry.placeId);
-    if (!store) continue;
     const date = new Date(entry.likedAt);
     const label = dayLabel(date, now);
     let group = groups.find((g) => g.label === label);
     if (!group) {
-      group = { label, date, rows: [] };
+      group = { label, date, entryCount: 0, rows: [] };
       groups.push(group);
     }
-    group.rows.push({ entry, store });
+    group.entryCount += 1;
+    const store = stores.find((s) => s.placeId === entry.placeId);
+    if (store) group.rows.push({ entry, store });
   }
-  const total = groups.reduce((n, g) => n + g.rows.length, 0);
+  const total = history.length;
 
   // 絞り込み・並べ替えは日付ごとに行う。
   const shownGroups = groups
@@ -80,17 +77,9 @@ export function FavListHistoryView({
       const kept = filters.apply(g.rows.map((r) => r.store));
       return { ...g, rows: kept.map((s) => g.rows.find((r) => r.store === s)!) };
     })
-    .filter((g) => g.rows.length > 0 || !filters.narrowing);
+    // 絞り込みで0件になった日は隠す(閉じている日は中身が分からないので残す)。
+    .filter((g) => g.rows.length > 0 || !filters.narrowing || !openDays.has(g.label));
   const shown = shownGroups.reduce((n, g) => n + g.rows.length, 0);
-
-  function toggleDay(label: string) {
-    setOpenDays((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      return next;
-    });
-  }
 
   function toggleSelecting() {
     setSelecting((s) => !s);
@@ -153,24 +142,16 @@ export function FavListHistoryView({
             const open = openDays.has(group.label);
             return (
               <section key={group.label} className="flex flex-col gap-2.5">
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  onClick={() => toggleDay(group.label)}
-                  className="flex h-9 items-center gap-2 text-left"
-                >
-                  <span className="text-[13px] font-bold text-text-primary">{group.label}</span>
-                  {/* 「今日」「昨日」のときだけ日付を横に添える(それ以外は見出しがもう日付) */}
-                  {(group.label === TODAY || group.label === "昨日") && (
-                    <span className="font-mono text-[10px] text-text-tertiary">
-                      {group.date.getMonth() + 1}/{group.date.getDate()}
-                    </span>
-                  )}
-                  <span className="text-[11px] text-text-secondary">・{group.rows.length}件</span>
-                  <span aria-hidden className="ml-auto text-xs text-text-tertiary">
-                    {open ? "▲ 閉じる" : "▼ 見る"}
-                  </span>
-                </button>
+                <DayHeader
+                  label={group.label}
+                  date={group.date}
+                  count={open && filters.narrowing ? group.rows.length : group.entryCount}
+                  open={open}
+                  onToggle={() => onToggleDay(group.label)}
+                />
+                {open && group.rows.length === 0 && loading && (
+                  <p className="text-center text-xs text-text-tertiary">読み込んでいます…</p>
+                )}
                 {open && (
                   <ul className="flex flex-col gap-3">
                     {group.rows.map(({ entry, store }) => {
@@ -272,7 +253,7 @@ export function FavListHistoryView({
               picked.size > 0 ? "bg-accent text-white" : "bg-tab-active text-text-tertiary"
             }`}
           >
-            {picked.size > 0 ? `${picked.size}件を「自分」に追加` : "店を選んでください"}
+            {picked.size > 0 ? `${picked.size}件をリストに追加` : "店を選んでください"}
           </button>
         </div>
       )}
