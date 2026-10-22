@@ -223,12 +223,14 @@ export function PollPage({ id }: { id: string }) {
       {load.kind === "ok" && (
         <header className="flex shrink-0 flex-col gap-0.5 px-5 pb-2 pt-4">
           {/* 投票ページからアプリへ戻る道。ログインしていない友達には「開く」として見せる */}
-          <Link
+          {/* アプリの中での切り替え(Link)だと、アプリが ?tab=list を読む前に画面ができてしまう
+              ことがあるので、ページごと開き直す普通のリンクにする */}
+          <a
             href={account.email ? "/?tab=list" : "/"}
             className="-ml-1 mb-1 flex h-9 w-fit items-center gap-1 rounded-full px-2 text-xs font-bold text-text-secondary"
           >
             {account.email ? "‹ アプリに戻る" : "直観メシを開く ›"}
-          </Link>
+          </a>
           <p className="text-[11px] font-bold text-[#8F5E10]">
             🗳 {load.poll.isOpen ? "投票受付中" : "投票は終わりました"}
           </p>

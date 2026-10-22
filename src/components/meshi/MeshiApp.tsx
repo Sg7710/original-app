@@ -190,7 +190,12 @@ export function MeshiApp() {
     setIsReturningVisitor(onboardingSeen);
   }
 
-  const [stage, setStage] = useState<Stage>("location");
+  // 投票ページから戻ってきたときは、現在地の画面で待たせずにいきなり食べたいリストを出す
+  // (現在地は下の effect で裏で取る)。
+  const [stage, setStage] = useState<Stage>(openListFirst ? "app" : "location");
+  useEffect(() => {
+    if (openListFirst) request();
+  }, [openListFirst, request]);
   if (stage === "location" && locationStatus === "granted") {
     setStage(isReturningVisitor ? "app" : "choice");
   }
@@ -262,6 +267,11 @@ export function MeshiApp() {
         {tabBar}
       </div>
     );
+  }
+
+  // 現在地の画面を飛ばして来た(投票ページから戻った)ときに、スワイプを開いたがまだ現在地がない
+  if (locationStatus !== "granted") {
+    return <LocationPermission status={locationStatus} onRequest={request} footer={tabBar} />;
   }
 
   if (search.status === "error") {

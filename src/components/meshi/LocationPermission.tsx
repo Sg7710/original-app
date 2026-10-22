@@ -10,6 +10,8 @@ interface LocationPermissionProps {
   onRequest: () => void;
   /** Returning visitor: skip the explanation and request location right away. */
   autoStart?: boolean;
+  /** 下に出すもの(タブバー)。アプリの途中でこの画面になったとき用 */
+  footer?: React.ReactNode;
 }
 
 const REQUESTING_HINT_DELAY_MS = 3_000;
@@ -18,6 +20,7 @@ export function LocationPermission({
   status,
   onRequest,
   autoStart = false,
+  footer,
 }: LocationPermissionProps) {
   const { markSeen } = useOnboarding();
   const [showRequestingHint, setShowRequestingHint] = useState(false);
@@ -51,7 +54,11 @@ export function LocationPermission({
 
   const content = (() => {
     if (status === "idle" && autoStart) {
-      return { title: " ", body: undefined as string | undefined, actionLabel: undefined as string | undefined };
+      return {
+        title: " ",
+        body: undefined as string | undefined,
+        actionLabel: undefined as string | undefined,
+      };
     }
     switch (status) {
       case "requesting":
@@ -97,6 +104,7 @@ export function LocationPermission({
           </button>
         )}
       </div>
+      {footer}
     </div>
   );
 }
