@@ -144,6 +144,20 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
     if (isTop) cardRef.current?.focus({ preventScroll: true });
   }, [isTop]);
 
+  // iPhone の Safari は、下へ引っ張る指の動きを自分の動き(アドレスバーを出す・ページを引っ張る)に
+  // 使おうとして、カードのドラッグを途中で中止させる(pointercancel)。touch-action だけでは
+  // 止まらないので、ドラッグ中はカードの上の touchmove を止めて、Safari に渡さない。
+  // (React の onTouchMove は止められない設定なので、自分で登録する)
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || !isTop) return;
+    function blockBrowserGesture(e: TouchEvent) {
+      if (startRef.current) e.preventDefault();
+    }
+    el.addEventListener("touchmove", blockBrowserGesture, { passive: false });
+    return () => el.removeEventListener("touchmove", blockBrowserGesture);
+  }, [isTop]);
+
   function reduceMotion(): boolean {
     return (
       typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
