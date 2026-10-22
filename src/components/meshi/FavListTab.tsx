@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from "react";
 import type { Store } from "@/types/store";
 import type { LikeEntry } from "@/types/social";
 import type { FavoriteEntry } from "@/hooks/useFavorites";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useStoreLookup } from "@/hooks/useStoreLookup";
 import { LIKE_HISTORY_DAYS } from "@/hooks/useLikeHistory";
 import type { Coords } from "@/hooks/useLocation";
@@ -12,7 +11,6 @@ import { FavListHeader, type FavView } from "./FavListHeader";
 import { FavListMineView } from "./FavListMineView";
 import { FavListHistoryView, type HistoryEntry } from "./FavListHistoryView";
 import { dayLabel, TODAY } from "./DayHeader";
-import { ProfilePopup } from "./ProfilePopup";
 
 const HISTORY_LIMIT = 30;
 
@@ -26,7 +24,8 @@ interface FavListTabProps {
   onRemove: (placeId: string) => void;
   onToggleFavorite: (placeId: string) => void;
   onAddMany: (placeIds: string[]) => void;
-  onOpenSettings: () => void;
+  /** 最初に開くタブ(投票ページの「アプリに戻る」からは「リスト」) */
+  initialView?: FavView;
 }
 
 export function FavListTab({
@@ -38,11 +37,9 @@ export function FavListTab({
   onRemove,
   onToggleFavorite,
   onAddMany,
-  onOpenSettings,
+  initialView = "history",
 }: FavListTabProps) {
-  const [view, setView] = useState<FavView>("history");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const user = useCurrentUser();
+  const [view, setView] = useState<FavView>(initialView);
 
   const searchedIds = useMemo(() => new Set(stores.map((s) => s.placeId)), [stores]);
 
@@ -123,10 +120,8 @@ export function FavListTab({
       <FavListHeader
         view={view}
         onChangeView={changeView}
-        userName={user.name}
         mineCount={favorites.length}
         historyCount={recentHistory.length}
-        onOpenMenu={() => setMenuOpen(true)}
       />
 
       {view === "mine" && (
@@ -167,19 +162,6 @@ export function FavListTab({
           onBulkAdd={(placeIds) => {
             onAddMany(placeIds);
             setView("mine");
-          }}
-        />
-      )}
-
-      {menuOpen && (
-        <ProfilePopup
-          name={user.name}
-          favCount={favorites.length}
-          likeCount={likeHistory.length}
-          onClose={() => setMenuOpen(false)}
-          onOpenSettings={() => {
-            setMenuOpen(false);
-            onOpenSettings();
           }}
         />
       )}

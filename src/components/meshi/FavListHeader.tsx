@@ -1,16 +1,12 @@
 "use client";
 
-import { Avatar } from "./Avatar";
-
 export type FavView = "mine" | "history";
 
 interface FavListHeaderProps {
   view: FavView;
   onChangeView: (view: FavView) => void;
-  userName: string;
   mineCount: number;
   historyCount: number;
-  onOpenMenu: () => void;
 }
 
 // 食べたい = 右スワイプした店(見比べる場所)、リスト = 行くと決めた店。
@@ -19,14 +15,7 @@ const SEGMENTS: { key: FavView; label: string }[] = [
   { key: "mine", label: "リスト" },
 ];
 
-export function FavListHeader({
-  view,
-  onChangeView,
-  userName,
-  mineCount,
-  historyCount,
-  onOpenMenu,
-}: FavListHeaderProps) {
+export function FavListHeader({ view, onChangeView, mineCount, historyCount }: FavListHeaderProps) {
   const counts: Record<FavView, number> = {
     mine: mineCount,
     history: historyCount,
@@ -34,17 +23,7 @@ export function FavListHeader({
 
   return (
     <div className="flex shrink-0 flex-col gap-4 px-5 pb-[14px] pt-5">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-black text-text-primary">食べたいリスト</h1>
-        <button
-          type="button"
-          onClick={onOpenMenu}
-          className="-m-1.5 flex items-center gap-[7px] p-1.5"
-        >
-          <Avatar name={userName} color="#1A1813" size={24} className="text-[11px]" />
-          <span className="text-xs font-bold text-text-secondary">{userName}</span>
-        </button>
-      </div>
+      <h1 className="text-2xl font-black text-text-primary">食べたいリスト</h1>
 
       <div className="flex gap-1 rounded-[22px] bg-tab-active p-1">
         {SEGMENTS.map((segment) => {

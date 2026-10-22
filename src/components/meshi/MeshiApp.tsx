@@ -31,6 +31,7 @@ type SwipePhase = "lap1" | "confirm" | "lap2" | "done";
 function CenteredMessage({
   title,
   body,
+  footer,
   actionLabel,
   onAction,
   secondaryLabel,
@@ -42,6 +43,8 @@ function CenteredMessage({
   onAction?: () => void;
   secondaryLabel?: string;
   onSecondary?: () => void;
+  /** 下に出すもの(タブバー)。お店が見つからないときも食べたいリストへ行けるように */
+  footer?: React.ReactNode;
 }) {
   return (
     <div className={FRAME_CLASS}>
@@ -67,13 +70,24 @@ function CenteredMessage({
           </button>
         )}
       </div>
+      {footer}
     </div>
   );
 }
 
 export function MeshiApp() {
   const frameRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<Tab>("swipe");
+  // 投票ページの「アプリに戻る」(/?tab=list)から来たら、食べたいリストの「リスト」タブを開く。
+  const [openListFirst] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("tab") === "list",
+  );
+  const [tab, setTab] = useState<Tab>(openListFirst ? "fav" : "swipe");
+  // 読み込み直したときにまたリストから始まらないよう、URLの ?tab=list は消しておく
+  useEffect(() => {
+    if (openListFirst) window.history.replaceState(null, "", window.location.pathname);
+  }, [openListFirst]);
   const [idx, setIdx] = useState(0);
   const [showTutorial, setShowTutorial] = useState(false);
   const [conditionsOpen, setConditionsOpen] = useState(false);
@@ -228,9 +242,32 @@ export function MeshiApp() {
     );
   }
 
+  const tabBar = <BottomTabBar tab={tab} favCount={favorites.length} onChange={setTab} />;
+
+  // 食べたいリストは検索の状態に関係なく出す(お店が0件・検索に失敗したときも閉じ込められないように)。
+  if (tab === "fav") {
+    return (
+      <div ref={frameRef} className={FRAME_CLASS}>
+        <FavListTab
+          initialView={openListFirst ? "mine" : "history"}
+          favorites={favorites}
+          favoritesLoaded={favoritesLoaded}
+          stores={search.stores}
+          coords={searchCoords}
+          likeHistory={likeHistory}
+          onRemove={removeFavorite}
+          onToggleFavorite={toggleFavorite}
+          onAddMany={(placeIds) => placeIds.forEach((placeId) => addFavorite(placeId))}
+        />
+        {tabBar}
+      </div>
+    );
+  }
+
   if (search.status === "error") {
     return (
       <CenteredMessage
+        footer={tabBar}
         title="読み込めませんでした"
         actionLabel="再試行"
         onAction={search.retry}
@@ -241,13 +278,14 @@ export function MeshiApp() {
   }
 
   if (search.status !== "success") {
-    return <CenteredMessage title="お店を探しています…" />;
+    return <CenteredMessage title="お店を探しています…" footer={tabBar} />;
   }
 
   // 半径1.5kmで0件なら、サーバーが3kmまで自動で広げている。それでも1件もなかった。
   if (search.stores.length === 0) {
     return (
       <CenteredMessage
+        footer={tabBar}
         title="近くに営業中のお店が見つかりませんでした"
         body={
           nextRadius
@@ -295,95 +333,77 @@ export function MeshiApp() {
     markSwiped(placeId);
   }
 
-  function handleAddMany(placeIds: string[]) {
-    placeIds.forEach((placeId) => addFavorite(placeId));
-  }
-
   return (
     <div ref={frameRef} className={FRAME_CLASS}>
-      {tab === "fav" ? (
-        <FavListTab
-          favorites={favorites}
-          favoritesLoaded={favoritesLoaded}
-          stores={search.stores}
-          coords={searchCoords}
-          likeHistory={likeHistory}
-          onRemove={removeFavorite}
-          onToggleFavorite={toggleFavorite}
-          onAddMany={handleAddMany}
-          onOpenSettings={openSettings}
+      <>
+        <Header
+          locationStatus={locationStatus}
+          radiusM={searchedRadius}
+          maxPriceTier={maxPriceTier}
+          onOpenConditions={() => setConditionsOpen(true)}
         />
-      ) : (
-        <>
-          <Header
-            locationStatus={locationStatus}
-            radiusM={searchedRadius}
-            maxPriceTier={maxPriceTier}
-            onOpenConditions={() => setConditionsOpen(true)}
+
+        {phase === "confirm" ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
+            <h2 className="text-lg font-bold text-text-primary">もう一度見ますか？</h2>
+            <p className="text-sm text-text-secondary">
+              さっきパスした{lap2List.length}件を、もう一度だけ出します。
+            </p>
+            <div className="mt-4 flex w-full max-w-[260px] flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => setPhase("lap2")}
+                className="h-12 rounded-full bg-accent text-sm font-bold text-text-primary"
+              >
+                見る
+              </button>
+              <button
+                type="button"
+                onClick={() => setPhase("done")}
+                className="h-12 rounded-full border border-card-border text-sm font-bold text-text-primary"
+              >
+                見ない
+              </button>
+            </div>
+          </div>
+        ) : phase === "done" ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
+            <h2 className="text-lg font-bold text-text-primary">条件に合う近くの店は以上です</h2>
+            <p className="text-sm text-text-secondary">
+              {nextRadius
+                ? `半径${nextRadius / 1000}kmまで広げて、ほかのお店も見てみよう`
+                : "半径5kmまで探しました。予算などの条件を変えると、ほかのお店も見つかるかもしれません"}
+            </p>
+            <div className="mt-4 flex w-full max-w-[260px] flex-col gap-3">
+              <button
+                type="button"
+                onClick={seeMore}
+                className="h-12 rounded-full bg-accent text-sm font-bold text-text-primary"
+              >
+                {seeMoreLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("fav")}
+                className="h-12 rounded-full border border-card-border text-sm font-bold text-text-primary"
+              >
+                食べたいリストを見る
+              </button>
+            </div>
+          </div>
+        ) : (
+          <SwipeTab
+            stores={currentList}
+            idx={idx}
+            isRelapse={phase === "lap2"}
+            onAdvance={() => setIdx((i) => i + 1)}
+            onLike={handleLike}
+            onPass={handlePass}
           />
+        )}
+      </>
 
-          {phase === "confirm" ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-              <h2 className="text-lg font-bold text-text-primary">もう一度見ますか？</h2>
-              <p className="text-sm text-text-secondary">
-                さっきパスした{lap2List.length}件を、もう一度だけ出します。
-              </p>
-              <div className="mt-4 flex w-full max-w-[260px] flex-col gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPhase("lap2")}
-                  className="h-12 rounded-full bg-accent text-sm font-bold text-text-primary"
-                >
-                  見る
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPhase("done")}
-                  className="h-12 rounded-full border border-card-border text-sm font-bold text-text-primary"
-                >
-                  見ない
-                </button>
-              </div>
-            </div>
-          ) : phase === "done" ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-              <h2 className="text-lg font-bold text-text-primary">条件に合う近くの店は以上です</h2>
-              <p className="text-sm text-text-secondary">
-                {nextRadius
-                  ? `半径${nextRadius / 1000}kmまで広げて、ほかのお店も見てみよう`
-                  : "半径5kmまで探しました。予算などの条件を変えると、ほかのお店も見つかるかもしれません"}
-              </p>
-              <div className="mt-4 flex w-full max-w-[260px] flex-col gap-3">
-                <button
-                  type="button"
-                  onClick={seeMore}
-                  className="h-12 rounded-full bg-accent text-sm font-bold text-text-primary"
-                >
-                  {seeMoreLabel}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTab("fav")}
-                  className="h-12 rounded-full border border-card-border text-sm font-bold text-text-primary"
-                >
-                  食べたいリストを見る
-                </button>
-              </div>
-            </div>
-          ) : (
-            <SwipeTab
-              stores={currentList}
-              idx={idx}
-              isRelapse={phase === "lap2"}
-              onAdvance={() => setIdx((i) => i + 1)}
-              onLike={handleLike}
-              onPass={handlePass}
-            />
-          )}
-        </>
-      )}
-
-      <BottomTabBar tab={tab} favCount={favorites.length} onChange={setTab} />
+      {tabBar}
 
       {conditionsOpen && tab === "swipe" && (
         <ConditionsSheet radiusValue={searchedRadius} onClose={() => setConditionsOpen(false)} />
