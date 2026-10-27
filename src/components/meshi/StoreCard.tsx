@@ -25,6 +25,8 @@ interface StoreCardProps {
   onAdvance?: () => void;
   /** false: 時間の代わりに営業状況を出す(投票ページなど、見る人の現在地を使わないとき) */
   showTravelTime?: boolean;
+  /** 写真をめくったとき(使い方の練習で「タップしてみよう」を見届けるため) */
+  onPhotoFlip?: () => void;
 }
 
 /** これだけ横に動かしたら確定(カード幅の28%、ただし最大110px)。 */
@@ -91,7 +93,7 @@ function edgeFadeMask(box: PhotoBox): string | undefined {
 }
 
 export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function StoreCard(
-  { store, position, isRelapse = false, onCommit, onAdvance, showTravelTime = true },
+  { store, position, isRelapse = false, onCommit, onAdvance, showTravelTime = true, onPhotoFlip },
   ref,
 ) {
   const [flying, setFlying] = useState<"like" | "pass" | null>(null);
@@ -280,6 +282,7 @@ export const StoreCard = forwardRef<StoreCardHandle, StoreCardProps>(function St
 
   function flipPhoto(step: 1 | -1) {
     setWantedPhoto((i) => Math.min(Math.max(i + step, 0), photos.length - 1));
+    onPhotoFlip?.();
   }
 
   /** 写真の右半分をタップで次、左半分で前の写真。 */

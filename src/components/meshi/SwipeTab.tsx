@@ -13,6 +13,8 @@ interface SwipeTabProps {
   onPass: (placeId: string) => void;
   /** false: カードに時間の代わりに営業状況を出す(投票ページ用) */
   showTravelTime?: boolean;
+  /** 一番上のカードの写真がめくられたとき */
+  onPhotoFlip?: () => void;
 }
 
 export function SwipeTab({
@@ -23,6 +25,7 @@ export function SwipeTab({
   onLike,
   onPass,
   showTravelTime = true,
+  onPhotoFlip,
 }: SwipeTabProps) {
   const topRef = useRef<StoreCardHandle>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -75,6 +78,7 @@ export function SwipeTab({
             onCommit={handleCommit}
             onAdvance={onAdvance}
             showTravelTime={showTravelTime}
+            onPhotoFlip={i === 0 ? onPhotoFlip : undefined}
           />
         ))}
       </div>
@@ -82,7 +86,6 @@ export function SwipeTab({
         <button
           type="button"
           aria-label="パスする"
-          data-onboarding-target="pass"
           onClick={() => topRef.current?.commit("pass")}
           className="flex h-[62px] flex-1 items-center justify-center gap-2 rounded-full border border-card-border bg-white text-base font-bold text-text-secondary shadow-card"
         >
@@ -91,7 +94,6 @@ export function SwipeTab({
         <button
           type="button"
           aria-label="食べたいリストに追加"
-          data-onboarding-target="like"
           onClick={() => topRef.current?.commit("like")}
           className="flex h-[62px] flex-1 items-center justify-center gap-2 rounded-full bg-accent text-base font-bold text-text-primary shadow-card"
         >

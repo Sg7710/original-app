@@ -24,7 +24,6 @@ export function BottomTabBar({ tab, favCount, onChange }: BottomTabBarProps) {
             key={t.key}
             type="button"
             aria-current={active ? "page" : undefined}
-            data-onboarding-target={t.key === "fav" ? "fav-tab" : undefined}
             onClick={() => onChange(t.key)}
             className={`relative flex h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-[18px] text-[11px] font-bold ${
               active ? "bg-tab-active text-text-primary" : "text-text-tertiary"

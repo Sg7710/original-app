@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFavorites } from "@/hooks/useFavorites";
 import { LIKE_HISTORY_DAYS, useLikeHistory } from "@/hooks/useLikeHistory";
 import { useLocation } from "@/hooks/useLocation";
@@ -14,7 +14,7 @@ import type { Store } from "@/types/store";
 import { FRAME_CLASS } from "./frame";
 import { LocationPermission } from "./LocationPermission";
 import { OnboardingChoice } from "./OnboardingChoice";
-import { TutorialOverlay } from "./TutorialOverlay";
+import { PracticeTutorial } from "./PracticeTutorial";
 import { Header } from "./Header";
 import { SwipeTab } from "./SwipeTab";
 import { FavListTab } from "./FavListTab";
@@ -76,7 +76,6 @@ function CenteredMessage({
 }
 
 export function MeshiApp() {
-  const frameRef = useRef<HTMLDivElement>(null);
   // 投票ページの「アプリに戻る」(/?tab=list)から来たら、食べたいリストの「リスト」タブを開く。
   const [openListFirst] = useState(
     () =>
@@ -226,6 +225,20 @@ export function MeshiApp() {
     );
   }
 
+  // 使い方の練習は専用の画面。お店の検索の状態に関係なく、これだけを出す。
+  if (showTutorial) {
+    return (
+      <div className={FRAME_CLASS}>
+        <PracticeTutorial
+          onDone={() => {
+            setShowTutorial(false);
+            setTab("swipe");
+          }}
+        />
+      </div>
+    );
+  }
+
   const openSettings = () => setTab("profile");
   // 1段階広げて探し直す。最大(5km)なら設定画面で条件を変えてもらう。
   const seeMore = nextRadius ? () => setRadiusOverride(nextRadius) : openSettings;
@@ -237,7 +250,6 @@ export function MeshiApp() {
       <div className={FRAME_CLASS}>
         <SettingsPanel
           onShowTutorial={() => {
-            setTab("swipe");
             setShowTutorial(true);
           }}
           onSearch={() => setTab("swipe")}
@@ -252,7 +264,7 @@ export function MeshiApp() {
   // 食べたいリストは検索の状態に関係なく出す(お店が0件・検索に失敗したときも閉じ込められないように)。
   if (tab === "fav") {
     return (
-      <div ref={frameRef} className={FRAME_CLASS}>
+      <div className={FRAME_CLASS}>
         <FavListTab
           initialView={openListFirst ? "mine" : "history"}
           favorites={favorites}
@@ -344,7 +356,7 @@ export function MeshiApp() {
   }
 
   return (
-    <div ref={frameRef} className={FRAME_CLASS}>
+    <div className={FRAME_CLASS}>
       <>
         <Header
           locationStatus={locationStatus}
@@ -417,20 +429,6 @@ export function MeshiApp() {
 
       {conditionsOpen && tab === "swipe" && (
         <ConditionsSheet radiusValue={searchedRadius} onClose={() => setConditionsOpen(false)} />
-      )}
-
-      {showTutorial && (
-        <TutorialOverlay
-          containerRef={frameRef}
-          onComplete={() => {
-            setShowTutorial(false);
-            // オーバーレイを閉じるとフォーカスが失われる(要素ごと消えるため)ので、
-            // キーボード操作を続けられるようカードにフォーカスを戻す(8.2)。
-            frameRef.current
-              ?.querySelector<HTMLElement>('[tabindex="0"]')
-              ?.focus({ preventScroll: true });
-          }}
-        />
       )}
     </div>
   );
