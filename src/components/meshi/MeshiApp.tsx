@@ -10,6 +10,7 @@ import { usePassHistory } from "@/hooks/usePassHistory";
 import { useStores } from "@/hooks/useStores";
 import { useAccount, type SearchRadius } from "@/hooks/useAccount";
 import { orderForDeck } from "@/lib/meshi/derived";
+import { deckKind } from "@/lib/meshi/open-status";
 import type { Store } from "@/types/store";
 import { FRAME_CLASS } from "./frame";
 import { LocationPermission } from "./LocationPermission";
@@ -97,7 +98,8 @@ export function MeshiApp() {
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
 
   const account = useAccount();
-  const { maxPriceTier } = account.settings;
+  const { maxPriceTier, deckKinds } = account.settings;
+  const kindsKey = `${+deckKinds.open}${+deckKinds.opensSoon}${+deckKinds.closesSoon}`;
   // 「もっとお店を見てみよう」で今回だけ広げた距離。設定は変えない。
   // 設定画面で距離を選び直したら、そちらを優先して解除する。
   const [radiusOverride, setRadiusOverride] = useState<SearchRadius | null>(null);
@@ -139,9 +141,12 @@ export function MeshiApp() {
     return ids;
   };
   const [hiddenFavorites, setHiddenFavorites] = useState<ReadonlySet<string>>(favoriteIdsNow);
+  // 山を作った時刻。営業中・まもなく開店などの種類は、この時刻で決める。
+  const [deckBuiltAt, setDeckBuiltAt] = useState(() => Date.now());
   const [deckSource, setDeckSource] = useState(search.stores);
   if (search.stores !== deckSource) {
     setDeckSource(search.stores);
+    setDeckBuiltAt(() => Date.now());
     setHiddenFavorites(favoriteIdsNow());
   }
   // 「自分」のリストを Supabase から読み終える前に山を作っていたら、まだ1枚も
@@ -154,13 +159,14 @@ export function MeshiApp() {
 
   // 条件(距離・予算)や探す場所が変わったら、スワイプ済みの店を除いて山を作り直す。
   const placeKey = searchCoords ? `${searchCoords.lat},${searchCoords.lng}` : "";
-  const conditionKey = `${radiusM}:${maxPriceTier}:${placeKey}`;
+  const conditionKey = `${radiusM}:${maxPriceTier}:${kindsKey}:${placeKey}`;
   const [appliedKey, setAppliedKey] = useState(conditionKey);
   if (conditionKey !== appliedKey) {
     // 距離が変わると探し直しの読み込み画面になるので、条件シートは閉じておく。
     if (conditionKey.split(":")[0] !== appliedKey.split(":")[0]) setConditionsOpen(false);
     setAppliedKey(conditionKey);
     setExcluded(swiped);
+    setDeckBuiltAt(() => Date.now());
     setHiddenFavorites(favoriteIdsNow());
     setIdx(0);
     setPhase("lap1");
@@ -168,18 +174,23 @@ export function MeshiApp() {
 
   // 1周目の並び: 営業中を先に(シャッフル)、まもなく開店の店をあとに。
   // 価格が分からない店(priceTier なし)は予算に関係なく残す。
-  const lap1List = useMemo(
-    () =>
-      orderForDeck(
-        search.stores.filter(
-          (s) =>
-            !excluded.has(s.placeId) &&
-            !hiddenFavorites.has(s.placeId) &&
-            (maxPriceTier === null || s.priceTier === null || s.priceTier <= maxPriceTier),
-        ),
-      ),
-    [search.stores, excluded, hiddenFavorites, maxPriceTier],
-  );
+  // 「スワイプに出すお店」(営業中・まもなく開店・まもなく閉店)で選ばれた種類だけ出す。
+  const lap1List = useMemo(() => {
+    return orderForDeck(
+      search.stores.filter((s) => {
+        const kind = deckKind(s, deckBuiltAt);
+        return (
+          kind !== null &&
+          deckKinds[kind] &&
+          !excluded.has(s.placeId) &&
+          !hiddenFavorites.has(s.placeId) &&
+          (maxPriceTier === null || s.priceTier === null || s.priceTier <= maxPriceTier)
+        );
+      }),
+    );
+    // deckKinds は kindsKey で見る(中身が同じなら作り直さない)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.stores, excluded, hiddenFavorites, maxPriceTier, kindsKey, deckBuiltAt]);
   const currentList = phase === "lap2" ? lap2List : lap1List;
 
   // Freeze "is this a returning visitor" the first time we know it, so later

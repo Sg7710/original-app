@@ -10,6 +10,7 @@ import {
   saveTravelMode,
 } from "@/hooks/useAccount";
 import { PRICE_TIER_COLORS } from "@/lib/meshi/derived";
+import type { DeckKind } from "@/lib/meshi/open-status";
 
 const RADIUS_OPTIONS: { value: SearchRadius; label: string }[] = [
   { value: 1500, label: "1.5km" },
@@ -29,6 +30,58 @@ export const PRICE_OPTIONS: { value: MaxPriceTier; label: string; dots: (1 | 2 |
   { value: 3, label: "〜¥6,000", dots: [1, 2, 3] },
   { value: null, label: "上限なし", dots: [1, 2, 3, 4] },
 ];
+
+const DECK_KIND_OPTIONS: { value: DeckKind; label: string; note: string }[] = [
+  { value: "open", label: "営業中", note: "" },
+  { value: "opensSoon", label: "まもなく開店", note: "30分以内に開く" },
+  { value: "closesSoon", label: "まもなく閉店", note: "閉店まで30分以内" },
+];
+
+/** 「出すお店」のチェック。最後の1つは外せない(1軒も出なくなるため)。 */
+function DeckKindChecks({
+  value,
+  onChange,
+}: {
+  value: Record<DeckKind, boolean>;
+  onChange: (value: Record<DeckKind, boolean>) => void;
+}) {
+  const checkedCount = DECK_KIND_OPTIONS.filter((o) => value[o.value]).length;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs font-bold text-text-primary">スワイプに出すお店</p>
+      <div className="flex flex-col gap-1 rounded-[22px] bg-tab-active p-1">
+        {DECK_KIND_OPTIONS.map((o) => {
+          const checked = value[o.value];
+          const locked = checked && checkedCount === 1;
+          return (
+            <label
+              key={o.value}
+              className={`flex h-11 items-center gap-3 rounded-[18px] px-3 text-xs font-bold ${
+                checked
+                  ? "bg-white text-text-primary shadow-[0_2px_8px_rgba(26,24,19,0.08)]"
+                  : "text-[#8A8474]"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                aria-disabled={locked}
+                onChange={() => {
+                  if (!locked) onChange({ ...value, [o.value]: !checked });
+                }}
+                className="h-5 w-5 shrink-0 accent-[#1A1813]"
+              />
+              <span>{o.label}</span>
+              {o.note && (
+                <span className="text-[11px] font-normal text-text-tertiary">（{o.note}）</span>
+              )}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function radiusLabel(radiusM: number): string {
   return `${radiusM / 1000}km`;
@@ -99,6 +152,7 @@ export function SearchConditionsFields({
     (radiusValue ?? account.settings.radiusM) as SearchRadius,
   );
   const [draftTier, setDraftTier] = useState<MaxPriceTier>(account.settings.maxPriceTier);
+  const [draftKinds, setDraftKinds] = useState(account.settings.deckKinds);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
 
@@ -110,6 +164,7 @@ export function SearchConditionsFields({
         radiusM: draftRadius,
         maxPriceTier: draftTier,
         travelMode: account.settings.travelMode,
+        deckKinds: draftKinds,
       });
       onApplied();
     } catch {
@@ -164,6 +219,7 @@ export function SearchConditionsFields({
       <p className="text-[11px] leading-relaxed text-text-tertiary">
         価格が分からないお店（グレー）は、予算に関係なく表示します。
       </p>
+      <DeckKindChecks value={draftKinds} onChange={setDraftKinds} />
       <button
         type="button"
         onClick={apply}

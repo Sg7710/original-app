@@ -4,7 +4,9 @@ import type { Store } from "@/types/store";
 export type OpenStatus = "open" | "soon" | "unknown" | "closed";
 
 /** この時間以内に開く店は「まもなく開店」。 */
-const OPENS_SOON_MS = 60 * 60 * 1000;
+const OPENS_SOON_MS = 30 * 60 * 1000;
+/** 閉店までこの時間を切った店は「まもなく閉店」。 */
+const CLOSES_SOON_MS = 30 * 60 * 1000;
 
 /** 上から 営業中 → まもなく開店 → 営業時間が分からない → 営業時間外 の順に並べる。 */
 export const OPEN_STATUS_RANK: Record<OpenStatus, number> = {
@@ -32,4 +34,22 @@ export function openStatus(
     return opensAt - now <= OPENS_SOON_MS ? "soon" : "closed";
   }
   return store.openNow === false ? "closed" : "unknown";
+}
+
+/** スワイプに出すかを設定で選べる、お店の種類。 */
+export type DeckKind = "open" | "opensSoon" | "closesSoon";
+
+/**
+ * スワイプの設定「出すお店」での種類。営業中の店は、閉店まで30分を切ったら
+ * 「まもなく閉店」に入る(「営業中」とは重ならない)。どれでもない店は null。
+ */
+export function deckKind(
+  store: Pick<Store, "openNow" | "opensAt" | "closesAt">,
+  now: number,
+): DeckKind | null {
+  const status = openStatus(store, now);
+  if (status === "soon") return "opensSoon";
+  if (status !== "open") return null;
+  const closesAt = store.closesAt ? Date.parse(store.closesAt) : NaN;
+  return closesAt - now <= CLOSES_SOON_MS ? "closesSoon" : "open";
 }

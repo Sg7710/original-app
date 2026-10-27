@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { isAuthBypassed } from "@/lib/meshi/dev-mode";
+import type { DeckKind } from "@/lib/meshi/open-status";
 
 export type SearchRadius = 1500 | 3000 | 5000;
 export type MaxPriceTier = 1 | 2 | 3 | null;
@@ -14,6 +15,8 @@ export interface SearchSettings {
   /** Highest price band to show (see Store.priceTier); null = no limit. */
   maxPriceTier: MaxPriceTier;
   travelMode: TravelMode;
+  /** スワイプに出すお店の種類(営業中・まもなく開店・まもなく閉店)。最低1つは true。 */
+  deckKinds: Record<DeckKind, boolean>;
 }
 
 export interface Account {
@@ -26,10 +29,16 @@ export interface Account {
   settings: SearchSettings;
 }
 
+export const DEFAULT_DECK_KINDS: Record<DeckKind, boolean> = {
+  open: true,
+  opensSoon: false,
+  closesSoon: false,
+};
 export const DEFAULT_SETTINGS: SearchSettings = {
   radiusM: 1500,
   maxPriceTier: null,
   travelMode: "walk",
+  deckKinds: DEFAULT_DECK_KINDS,
 };
 const TRAVEL_MODES: TravelMode[] = ["walk", "bike", "car"];
 const RADII: SearchRadius[] = [1500, 3000, 5000];
@@ -65,7 +74,19 @@ function parseSettings(raw: unknown): SearchSettings {
     travelMode: TRAVEL_MODES.includes(s.travelMode as TravelMode)
       ? (s.travelMode as TravelMode)
       : "walk",
+    deckKinds: parseDeckKinds(s.deckKinds),
   };
+}
+
+function parseDeckKinds(raw: unknown): Record<DeckKind, boolean> {
+  const k = (raw ?? {}) as Partial<Record<DeckKind, unknown>>;
+  const kinds = {
+    open: k.open === true,
+    opensSoon: k.opensSoon === true,
+    closesSoon: k.closesSoon === true,
+  };
+  // まだ選んだことがない(古い保存データ)か、全部外れていたら初期の「営業中だけ」
+  return kinds.open || kinds.opensSoon || kinds.closesSoon ? kinds : DEFAULT_DECK_KINDS;
 }
 
 function withName(a: Omit<Account, "name">): Account {

@@ -29,7 +29,7 @@ const DETAILS_FIELD_MASK = [
 ].join(",");
 
 /** Stores that open within this window are shown after the open ones, labelled with the time. */
-const OPENS_SOON_MS = 60 * 60 * 1000;
+const OPENS_SOON_MS = 30 * 60 * 1000;
 
 /**
  * Places whose *primary* type is one of these get returned for `restaurant`
